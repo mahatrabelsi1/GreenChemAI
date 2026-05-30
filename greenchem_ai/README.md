@@ -1,5 +1,7 @@
 # GreenChem AI
 
+![GreenChem AI logo](assets/logo.svg)
+
 Explainable Green Chemistry Decision Support System for safer solvent substitution and process optimization.
 
 GreenChem AI combines deterministic scientific scoring, solvent similarity analysis, scientific literature retrieval, expert-memory learning, and human validation to help chemists identify safer and more sustainable solvent alternatives before experimentation.
@@ -77,6 +79,21 @@ waste kg / estimated product kg
 
 The optimized process uses deterministic assumptions for yield and waste based on solvent greenness, regulatory risk, and reaction class waste factor. These assumptions are visible in the XAI trace and should be validated experimentally.
 
+Final solvent ranking uses a transparent 50/50 decision score:
+
+```text
+Rank Score =
+0.5 x Candidate GreenScore
++ 0.5 x Improvement Score
++ Expert Memory Adjustment
+
+Improvement Score =
+0.5 x Toxicity Improvement Score
++ 0.5 x Normalized E-Factor Improvement Score
+```
+
+The 50/50 split balances absolute candidate quality with direct improvement over the current process. E-Factor improvement is normalized to a 0-100 scale before weighting so it can be compared fairly with toxicity improvement.
+
 ## RAG and Feedback Workflow
 
 GreenChem AI uses local retrieval and evidence paths:
@@ -115,6 +132,7 @@ greenchem_ai/
 │   ├── rag_engine.py
 │   └── prompts.py
 ├── assets/
+│   ├── logo.svg
 │   └── architecture.md
 └── docs/
     ├── scientific_note.md

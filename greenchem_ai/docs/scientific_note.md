@@ -23,6 +23,21 @@ Candidate solvents are first filtered by compatibility with the selected reactio
 - E-Factor improvement versus current process
 - Human feedback adjustment from previous validations
 
+The final rank score uses a 50/50 multi-criteria structure:
+
+```text
+Rank Score =
+0.5 x Candidate GreenScore
++ 0.5 x Improvement Score
++ Expert Memory Adjustment
+
+Improvement Score =
+0.5 x Toxicity Improvement Score
++ 0.5 x Normalized E-Factor Improvement Score
+```
+
+This balances absolute candidate quality with direct substitution benefit. E-Factor improvement is normalized before weighting because E-Factor and toxicity use different numerical scales.
+
 The LLM is not part of the ranking function.
 
 ## Adaptive Expert Memory

@@ -7,7 +7,9 @@ def build_decision_trace(current: dict, candidate: dict, rank_score: float, feed
         f"Toxicity change: {current['toxicity_score']:.1f} -> {candidate['toxicity_score']:.1f}.",
         f"GreenScore change: {current['green_score']:.1f} -> {candidate['green_score']:.1f}.",
         f"E-Factor change: {current['e_factor']:.3f} -> {candidate['e_factor']:.3f}.",
-        f"Rank score after deterministic scoring and feedback adjustment: {rank_score:.2f}.",
+        "Rank score equation: 0.5 x candidate GreenScore + 0.5 x normalized improvement score + expert memory adjustment.",
+        f"Improvement score combines toxicity reduction ({candidate.get('toxicity_improvement_score', 0):.1f}) and normalized E-Factor reduction ({candidate.get('efactor_improvement_score', 0):.1f}) equally.",
+        f"Rank score after 50/50 deterministic scoring and feedback adjustment: {rank_score:.2f}.",
         f"Feedback adjustment applied: {feedback_adjustment:+.2f}.",
     ]
 

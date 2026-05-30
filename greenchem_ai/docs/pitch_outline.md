@@ -16,6 +16,8 @@ GreenChem AI combines deterministic scientific scoring, solvent similarity analy
 
 The LLM never ranks or calculates. Deterministic code filters compatible solvents, computes E-Factor, estimates atom economy, calculates GreenScore, and ranks alternatives. Llama only explains the computed outcome.
 
+The final ranking uses a transparent 50/50 score: 50% candidate GreenScore and 50% normalized improvement over the current process. The improvement term equally combines toxicity reduction and E-Factor reduction.
+
 ## Demo
 
 Input:

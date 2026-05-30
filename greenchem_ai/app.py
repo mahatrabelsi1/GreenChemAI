@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import base64
 from datetime import datetime
 from io import BytesIO
+from pathlib import Path
 import re
 
 import pandas as pd
@@ -15,6 +17,10 @@ from core.reaction_database import get_reaction, load_reactions, reaction_types
 from core.science_backend_bridge import bridge_evidence
 from core.solvent_database import get_solvent, load_solvents, solvent_names
 from core.xai_engine import recommendation_xai
+
+
+ROOT = Path(__file__).resolve().parent
+LOGO_PATH = ROOT / "assets" / "logo.svg"
 
 
 st.set_page_config(
@@ -550,6 +556,33 @@ def cached_data() -> tuple[pd.DataFrame, pd.DataFrame]:
     return load_solvents(), load_reactions()
 
 
+@st.cache_data
+def logo_data_uri() -> str:
+    if not LOGO_PATH.exists():
+        return ""
+    encoded = base64.b64encode(LOGO_PATH.read_bytes()).decode("ascii")
+    return f"data:image/svg+xml;base64,{encoded}"
+
+
+def branded_header(title: str | None = None, caption: str | None = None) -> None:
+    logo = logo_data_uri()
+    if logo:
+        st.markdown(
+            f"""
+            <div style="display:flex; align-items:center; gap:18px; margin-bottom:12px;">
+                <img src="{logo}" alt="GreenChem AI logo" style="width:min(430px, 100%); height:auto;">
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+    else:
+        st.title("GreenChem AI")
+    if title:
+        st.subheader(title)
+    if caption:
+        st.caption(caption)
+
+
 def metric_row(current: dict, best: dict | None = None) -> None:
     cols = st.columns(4)
     cols[0].metric("GreenScore", f"{current['green_score']:.1f}", None if not best else f"{best['green_score'] - current['green_score']:.1f}")
@@ -966,6 +999,7 @@ def recommendations_table(recommendations: list[dict]) -> pd.DataFrame:
         [
             "solvent",
             "rank_score",
+            "improvement_score",
             "green_score",
             "toxicity_score",
             "e_factor",
@@ -979,6 +1013,7 @@ def recommendations_table(recommendations: list[dict]) -> pd.DataFrame:
         columns={
             "solvent": "Solvent",
             "rank_score": "Rank Score",
+            "improvement_score": "Improvement Score",
             "green_score": "GreenScore",
             "toxicity_score": "Toxicity",
             "e_factor": "E-Factor",
@@ -1010,8 +1045,76 @@ def render_contribution_bars(contributions: dict[str, float]) -> None:
             st.progress(progress)
 
 
+def is_chemistry_domain_question(text: str, solvents: pd.DataFrame, reactions: pd.DataFrame) -> bool:
+    clean_text = text.casefold()
+    if not clean_text.strip():
+        return False
+
+    domain_terms = {
+        "chemistry",
+        "chemist",
+        "chemical",
+        "reaction",
+        "reagent",
+        "catalyst",
+        "substrate",
+        "product",
+        "synthesis",
+        "solvent",
+        "green solvent",
+        "toxicity",
+        "toxic",
+        "hazard",
+        "safety",
+        "waste",
+        "e-factor",
+        "efactor",
+        "atom economy",
+        "yield",
+        "conversion",
+        "workup",
+        "process",
+        "optimization",
+        "optimisation",
+        "biodegradable",
+        "regulatory",
+        "polarity",
+        "boiling point",
+        "smiles",
+        "rdkit",
+        "qsar",
+        "flashcard",
+        "flashcards",
+        "lab",
+        "laboratory",
+    }
+    if any(term in clean_text for term in domain_terms):
+        return True
+    if any(reaction.casefold() in clean_text for reaction in reaction_types(reactions)):
+        return True
+    if any(solvent.casefold() in clean_text for solvent in solvent_names(solvents)):
+        return True
+    return False
+
+
 def route_chemist_problem(problem: str, solvents: pd.DataFrame, reactions: pd.DataFrame) -> dict:
     text = problem.casefold()
+    if not is_chemistry_domain_question(text, solvents, reactions):
+        return {
+            "feature": None,
+            "in_domain": False,
+            "confidence": 0.0,
+            "extracted": {
+                "reaction_type": None,
+                "current_solvent": None,
+                "yield_percent": None,
+                "waste_kg": None,
+                "notes": problem.strip(),
+            },
+            "missing": [],
+            "reasons": ["The request is outside the chemistry and green-solvent decision-support domain."],
+        }
+
     extracted = {
         "reaction_type": None,
         "current_solvent": None,
@@ -1081,6 +1184,7 @@ def route_chemist_problem(problem: str, solvents: pd.DataFrame, reactions: pd.Da
 
     return {
         "feature": feature,
+        "in_domain": True,
         "confidence": min(confidence, 0.95),
         "extracted": extracted,
         "missing": missing,
@@ -1089,8 +1193,10 @@ def route_chemist_problem(problem: str, solvents: pd.DataFrame, reactions: pd.Da
 
 
 def assistant_page(solvents: pd.DataFrame, reactions: pd.DataFrame) -> None:
-    st.title("AI Process Assistant")
-    st.caption("Describe the chemistry problem in plain language. The assistant routes you to the right GreenChem AI workflow.")
+    branded_header(
+        "AI Process Assistant",
+        "Describe the chemistry problem in plain language. The assistant routes you to the right GreenChem AI workflow.",
+    )
 
     st.markdown(
         """
@@ -1120,6 +1226,17 @@ def assistant_page(solvents: pd.DataFrame, reactions: pd.DataFrame) -> None:
         return
 
     route = st.session_state["assistant_route"]
+    if not route.get("in_domain", True):
+        st.warning(
+            "Sorry, GreenChem AI only answers chemistry, solvent, reaction, lab safety, and green process optimization questions. "
+            "Please enter something related to chemistry or a chemist workflow."
+        )
+        st.markdown("Examples you can ask:")
+        st.write("- I am running an esterification in DMF with 65% yield and 40 kg waste.")
+        st.write("- Show me solvent flashcards.")
+        st.write("- I need a safer solvent replacement for dichloromethane.")
+        return
+
     extracted = route["extracted"]
     other_workflows = [
         name for name in ["Process Analysis", "Solvent Flashcards", "Feedback History", "Local Data"]
@@ -1567,8 +1684,10 @@ def build_pdf_report(
 
 
 def analysis_page(solvents: pd.DataFrame, reactions: pd.DataFrame) -> None:
-    st.title("GreenChem AI")
-    st.caption("Explainable Green Chemistry Decision Support System. Llama explains; deterministic science decides.")
+    branded_header(
+        None,
+        "Explainable Green Chemistry Decision Support System. Llama explains; deterministic science decides.",
+    )
 
     if "analysis_step" not in st.session_state:
         st.session_state["analysis_step"] = 1
@@ -1753,6 +1872,17 @@ def analysis_page(solvents: pd.DataFrame, reactions: pd.DataFrame) -> None:
             f2.markdown('<div class="gc-factor"><span class="gc-check">OK</span><br>Toxicity Reduction</div>', unsafe_allow_html=True)
             f3.markdown('<div class="gc-factor"><span class="gc-check">OK</span><br>GreenScore Gain</div>', unsafe_allow_html=True)
             f4.markdown('<div class="gc-factor"><span class="gc-check">OK</span><br>Waste Reduction</div>', unsafe_allow_html=True)
+            st.markdown(
+                f"""
+                <div class="gc-source-card" style="background:#F0FDFA; border-color:#99F6E4;">
+                    <p style="color:#0F766E; font-size:12px; font-weight:900; text-transform:uppercase; margin:0 0 6px 0;">Rank score formula</p>
+                    <p style="color:#0F172A; margin:0;"><b>Rank Score = 0.5 x Candidate GreenScore + 0.5 x Improvement Score + Expert Memory Adjustment</b></p>
+                    <p style="color:#475569; margin:8px 0 0 0;">Improvement Score = 0.5 x Toxicity Improvement + 0.5 x normalized E-Factor Improvement.</p>
+                    <p style="color:#475569; margin:8px 0 0 0;">For {best['solvent']}: improvement score {best.get('improvement_score', 0):.1f}, toxicity improvement {best.get('toxicity_improvement_score', 0):.1f}, E-Factor improvement {best.get('efactor_improvement_score', 0):.1f}.</p>
+                </div>
+                """,
+                unsafe_allow_html=True,
+            )
             st.markdown(confidence_panel(current, best, recommendations), unsafe_allow_html=True)
             risk = risk_level(best)
             st.markdown(
@@ -1873,7 +2003,7 @@ def analysis_page(solvents: pd.DataFrame, reactions: pd.DataFrame) -> None:
 
 
 def feedback_page() -> None:
-    st.title("Feedback History")
+    branded_header("Feedback History", "Human validation history used as local expert memory.")
     feedback = load_feedback()
     if feedback.empty:
         st.info("No feedback recorded yet.")
@@ -1883,7 +2013,7 @@ def feedback_page() -> None:
 
 
 def data_page(solvents: pd.DataFrame, reactions: pd.DataFrame) -> None:
-    st.title("Local Scientific Data")
+    branded_header("Local Scientific Data", "Bundled solvent and reaction assumptions used by the deterministic engine.")
     tab1, tab2 = st.tabs(["Solvents", "Reactions"])
     with tab1:
         st.dataframe(solvents.drop(columns=["name_key"]), hide_index=True, use_container_width=True)
@@ -1910,8 +2040,10 @@ def _score_color(score: float) -> str:
 
 
 def flashcards_page(solvents: pd.DataFrame) -> None:
-    st.title("Solvent Flashcards")
-    st.caption("Compare solvent hazard, sustainability, process fit, and substitution quality from the local GreenChem AI dataset.")
+    branded_header(
+        "Solvent Flashcards",
+        "Compare solvent hazard, sustainability, process fit, and substitution quality from the local GreenChem AI dataset.",
+    )
 
     classifications = ["All"] + sorted(solvents["chem21_classification"].dropna().unique().tolist())
     c1, c2, c3 = st.columns([0.42, 0.29, 0.29])
@@ -2000,7 +2132,14 @@ def main() -> None:
     current_page = st.session_state.get("current_page", "AI Assistant")
     page_index = pages.index(current_page) if current_page in pages else 0
     with st.sidebar:
-        st.header("GreenChem AI")
+        logo = logo_data_uri()
+        if logo:
+            st.markdown(
+                f'<img src="{logo}" alt="GreenChem AI logo" style="width:100%; height:auto; margin-bottom:10px;">',
+                unsafe_allow_html=True,
+            )
+        else:
+            st.header("GreenChem AI")
         page = st.radio(
             "Navigation",
             pages,

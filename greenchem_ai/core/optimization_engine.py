@@ -72,10 +72,24 @@ def recommend_solvents(
             feedback=feedback,
             limit=3,
         )
+        toxicity_improvement_score = max(
+            0.0,
+            current["toxicity_score"] - float(solvent["toxicity_score"]),
+        )
+        efactor_improvement_score = 0.0
+        if current["e_factor"] > 0:
+            efactor_improvement_score = (
+                max(0.0, current["e_factor"] - metrics.e_factor)
+                / current["e_factor"]
+                * 100.0
+            )
+        improvement_score = (
+            0.5 * toxicity_improvement_score
+            + 0.5 * min(100.0, efactor_improvement_score)
+        )
         rank_score = (
-            metrics.green_score
-            + max(0.0, current["toxicity_score"] - float(solvent["toxicity_score"])) * 0.16
-            + max(0.0, current["e_factor"] - metrics.e_factor) * 2.5
+            0.5 * metrics.green_score
+            + 0.5 * improvement_score
             + adjustment
         )
         candidate = {
@@ -93,6 +107,9 @@ def recommend_solvents(
             "contributions": metrics.contributions,
             "feedback_adjustment": adjustment,
             "expert_memory_matches": memories,
+            "toxicity_improvement_score": round(toxicity_improvement_score, 2),
+            "efactor_improvement_score": round(min(100.0, efactor_improvement_score), 2),
+            "improvement_score": round(improvement_score, 2),
             "rank_score": round(rank_score, 2),
         }
         candidate["decision_trace"] = build_decision_trace(current, candidate, rank_score, adjustment)

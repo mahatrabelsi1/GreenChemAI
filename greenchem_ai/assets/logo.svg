@@ -1,0 +1,33 @@
+<svg width="920" height="220" viewBox="0 0 920 220" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="GreenChem AI logo">
+  <rect width="920" height="220" rx="18" fill="#F8FAFC"/>
+  <g transform="translate(46 28)">
+    <circle cx="82" cy="82" r="68" stroke="#0F766E" stroke-width="8" fill="#ECFEFF"/>
+    <path d="M55 116C83 113 105 92 110 63C82 66 60 87 55 116Z" fill="#0F766E"/>
+    <path d="M72 107C84 91 96 77 109 64" stroke="#D1FAE5" stroke-width="5" stroke-linecap="round"/>
+    <circle cx="43" cy="55" r="7" fill="#0F766E"/>
+    <circle cx="82" cy="35" r="7" fill="#14B8A6"/>
+    <circle cx="121" cy="57" r="7" fill="#14B8A6"/>
+    <circle cx="126" cy="105" r="7" fill="#14B8A6"/>
+    <circle cx="84" cy="134" r="7" fill="#0F766E"/>
+    <circle cx="39" cy="105" r="7" fill="#0F766E"/>
+    <path d="M43 55L82 35L121 57L126 105L84 134L39 105L43 55Z" stroke="#0F766E" stroke-width="5" stroke-linejoin="round"/>
+    <path d="M82 35L84 78M43 55L83 78M121 57L83 78M39 105L83 78M126 105L83 78M84 134L83 78" stroke="#14B8A6" stroke-width="4" stroke-linecap="round"/>
+    <circle cx="83" cy="78" r="8" fill="#0F766E"/>
+    <circle cx="146" cy="84" r="35" stroke="#14B8A6" stroke-width="5" fill="#F8FAFC"/>
+    <circle cx="132" cy="67" r="5" fill="#14B8A6"/>
+    <circle cx="158" cy="62" r="5" fill="#14B8A6"/>
+    <circle cx="168" cy="90" r="5" fill="#14B8A6"/>
+    <circle cx="144" cy="110" r="5" fill="#14B8A6"/>
+    <circle cx="121" cy="91" r="5" fill="#14B8A6"/>
+    <path d="M132 67L158 62L168 90L144 110L121 91L132 67Z" stroke="#14B8A6" stroke-width="3.5"/>
+    <path d="M132 67L144 110M158 62L121 91M168 90L132 67" stroke="#67E8F9" stroke-width="3" stroke-linecap="round"/>
+  </g>
+  <g transform="translate(244 64)">
+    <text x="0" y="55" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="56" font-weight="900" letter-spacing="-1">
+      <tspan fill="#0F766E">GREEN</tspan><tspan fill="#0F172A">CHEM</tspan><tspan fill="#14B8A6"> AI</tspan>
+    </text>
+    <text x="2" y="92" font-family="Inter, Segoe UI, Arial, sans-serif" font-size="21" font-weight="500" fill="#0F172A">
+      Explainable Green Chemistry Decision Support
+    </text>
+  </g>
+</svg>
