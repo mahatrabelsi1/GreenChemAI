@@ -507,15 +507,19 @@ def assistant_voice_player(script: str, key: str) -> None:
             font-family:Arial, sans-serif;">
             Play assistant voice
         </button>
+        <div style="font-family:Arial, sans-serif; color:#475569; font-size:12px; margin-top:6px;">
+            Auto voice starts when supported by the browser. Use the button if your browser blocks autoplay.
+        </div>
         <script>
         const text = {payload};
         const button = document.getElementById("play-{key}");
+        const storageKey = "greenchem_voice_auto_{key}";
         const speak = () => {{
             if (!("speechSynthesis" in window)) return;
             window.speechSynthesis.cancel();
             const utterance = new SpeechSynthesisUtterance(text);
-            utterance.rate = 1.5;
-            utterance.pitch = 1.08;
+            utterance.rate = 2.0;
+            utterance.pitch = 1.12;
             utterance.volume = 1.0;
             const pickVoice = () => {{
                 const voices = window.speechSynthesis.getVoices();
@@ -533,9 +537,15 @@ def assistant_voice_player(script: str, key: str) -> None:
             }}
         }};
         button.addEventListener("click", speak);
+        setTimeout(() => {{
+            if (sessionStorage.getItem(storageKey) !== text) {{
+                sessionStorage.setItem(storageKey, text);
+                speak();
+            }}
+        }}, 300);
         </script>
         """,
-        height=52,
+        height=74,
     )
 
 
