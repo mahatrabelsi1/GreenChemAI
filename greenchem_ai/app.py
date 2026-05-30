@@ -934,7 +934,13 @@ def route_chemist_problem(problem: str, solvents: pd.DataFrame, reactions: pd.Da
         reasons.append("Process optimization metrics detected.")
         feature = "Process Analysis"
         confidence += 0.15
-    if any(word in text for word in ["compare solvents", "solvent library", "flashcard", "properties"]):
+    compact_text = re.sub(r"[^a-z0-9]+", "", text)
+    if (
+        any(word in text for word in ["compare solvents", "solvent library", "flashcard", "flash card", "properties"])
+        or "solventflash" in compact_text
+        or "solventflsh" in compact_text
+        or "flshcard" in compact_text
+    ):
         reasons.append("Solvent property comparison requested.")
         feature = "Solvent Flashcards"
         confidence += 0.2
@@ -1053,9 +1059,9 @@ def assistant_page(solvents: pd.DataFrame, reactions: pd.DataFrame) -> None:
             st.session_state["assistant_prefill"] = defaults
             st.session_state["analysis_step"] = 1
             st.session_state.pop("analysis", None)
-            st.session_state["page_nav"] = "Analysis"
+            st.session_state["pending_page_nav"] = "Analysis"
         else:
-            st.session_state["page_nav"] = route["feature"]
+            st.session_state["pending_page_nav"] = route["feature"]
         st.rerun()
 
 
@@ -1827,11 +1833,15 @@ def flashcards_page(solvents: pd.DataFrame) -> None:
 def main() -> None:
     st.markdown(CSS, unsafe_allow_html=True)
     solvents, reactions = cached_data()
+    pages = ["AI Assistant", "Analysis", "Solvent Flashcards", "Feedback History", "Local Data"]
+    pending_page = st.session_state.pop("pending_page_nav", None)
+    page_index = pages.index(pending_page) if pending_page in pages else pages.index(st.session_state.get("page_nav", "AI Assistant")) if st.session_state.get("page_nav", "AI Assistant") in pages else 0
     with st.sidebar:
         st.header("GreenChem AI")
         page = st.radio(
             "Navigation",
-            ["AI Assistant", "Analysis", "Solvent Flashcards", "Feedback History", "Local Data"],
+            pages,
+            index=page_index,
             key="page_nav",
         )
         st.toggle("Mute assistant voice", key="voice_muted", value=st.session_state.get("voice_muted", False))
