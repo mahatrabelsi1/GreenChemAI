@@ -501,13 +501,16 @@ def auto_speak(script: str, key: str) -> None:
             sessionStorage.setItem(storageKey, text);
             window.speechSynthesis.cancel();
             const utterance = new SpeechSynthesisUtterance(text);
-            utterance.rate = 0.95;
-            utterance.pitch = 1.0;
+            utterance.rate = 1.5;
+            utterance.pitch = 1.08;
             utterance.volume = 1.0;
             const pickVoice = () => {{
                 const voices = window.speechSynthesis.getVoices();
-                const preferred = voices.find(v => /english|en-/i.test(v.lang));
-                if (preferred) utterance.voice = preferred;
+                const femaleVoice =
+                    voices.find(v => /female|woman|zira|samantha|victoria|karen|serena|susan|hazel|aria|jenny|natural/i.test(v.name) && /english|en-/i.test(v.lang)) ||
+                    voices.find(v => /female|woman|zira|samantha|victoria|karen|serena|susan|hazel|aria|jenny|natural/i.test(v.name)) ||
+                    voices.find(v => /english|en-/i.test(v.lang));
+                if (femaleVoice) utterance.voice = femaleVoice;
                 window.speechSynthesis.speak(utterance);
             }};
             if (window.speechSynthesis.getVoices().length) {{
