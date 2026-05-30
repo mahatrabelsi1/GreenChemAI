@@ -495,24 +495,11 @@ def assistant_voice_player(script: str, key: str) -> None:
     payload = json.dumps(script)
     components.html(
         f"""
-        <button id="play-{key}" style="
-            width:100%;
-            border:1px solid #0F766E;
-            background:#0F766E;
-            color:#F8FAFC;
-            border-radius:8px;
-            padding:10px 14px;
-            font-weight:800;
-            cursor:pointer;
-            font-family:Arial, sans-serif;">
-            Play assistant voice
-        </button>
-        <div style="font-family:Arial, sans-serif; color:#475569; font-size:12px; margin-top:6px;">
-            Auto voice starts when supported by the browser. Use the button if your browser blocks autoplay.
+        <div style="font-family:Arial, sans-serif; color:#0F766E; font-size:12px; font-weight:800;">
+            Assistant voice starts automatically.
         </div>
         <script>
         const text = {payload};
-        const button = document.getElementById("play-{key}");
         const storageKey = "greenchem_voice_auto_{key}";
         const speak = () => {{
             if (!("speechSynthesis" in window)) return;
@@ -536,16 +523,17 @@ def assistant_voice_player(script: str, key: str) -> None:
                 window.speechSynthesis.onvoiceschanged = pickVoice;
             }}
         }};
-        button.addEventListener("click", speak);
-        setTimeout(() => {{
+        const runAutoVoice = () => {{
             if (sessionStorage.getItem(storageKey) !== text) {{
                 sessionStorage.setItem(storageKey, text);
                 speak();
             }}
-        }}, 300);
+        }};
+        setTimeout(runAutoVoice, 250);
+        setTimeout(runAutoVoice, 900);
         </script>
         """,
-        height=74,
+        height=24,
     )
 
 

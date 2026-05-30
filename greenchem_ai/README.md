@@ -57,7 +57,7 @@ The assistant extracts the reaction, solvent, yield, and waste, recommends the P
 
 ## Assistant Voice
 
-The chemist enters text only. After the AI Process Assistant routes the problem, it can read the recommended workflow aloud using the browser's built-in `speechSynthesis` API. The user starts playback with the **Play assistant voice** button because browsers often block automatic speech playback after app reruns. It does not call a hosted Hugging Face endpoint or any external TTS API. Use the sidebar **Mute assistant voice** toggle to silence narration.
+The chemist enters text only. After the AI Process Assistant routes the problem, the app attempts to read the recommended workflow aloud automatically using the browser's built-in `speechSynthesis` API. It does not call a hosted Hugging Face endpoint or any external TTS API. Use the sidebar **Mute assistant voice** toggle to silence narration.
 
 Future local-TTS upgrade path: download and run an open-source TTS model locally, then connect it through your own backend. Calling a hosted Hugging Face Endpoint would count as an external API and is not used in this MVP.
 
