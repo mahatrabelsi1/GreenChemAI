@@ -487,34 +487,39 @@ def metric_row(current: dict, best: dict | None = None) -> None:
     cols[3].metric("Atom Economy", f"{current['atom_economy']:.1f}%")
 
 
-def voice_panel(title: str, script: str, key: str) -> None:
-    """Local browser text-to-speech guidance. No external AI API is called."""
-    with st.expander(f"Assistant voice: {title}", expanded=False):
-        st.write(script)
-        if st.session_state.get("voice_muted", False):
-            st.caption("Voice is muted from the sidebar.")
-            return
-        if st.button("Play voice guidance", key=f"voice-{key}"):
-            payload = json.dumps(script)
-            components.html(
-                f"""
-                <script>
-                const text = {payload};
-                if ("speechSynthesis" in window) {{
-                    window.speechSynthesis.cancel();
-                    const utterance = new SpeechSynthesisUtterance(text);
-                    utterance.rate = 0.95;
-                    utterance.pitch = 1.0;
-                    utterance.volume = 1.0;
-                    const voices = window.speechSynthesis.getVoices();
-                    const preferred = voices.find(v => /english|en-/i.test(v.lang));
-                    if (preferred) utterance.voice = preferred;
-                    window.speechSynthesis.speak(utterance);
-                }}
-                </script>
-                """,
-                height=0,
-            )
+def auto_speak(script: str, key: str) -> None:
+    """Local browser text-to-speech output. No external AI API is called."""
+    if st.session_state.get("voice_muted", False):
+        return
+    payload = json.dumps(script)
+    components.html(
+        f"""
+        <script>
+        const text = {payload};
+        const storageKey = "greenchem_voice_{key}";
+        if ("speechSynthesis" in window && sessionStorage.getItem(storageKey) !== text) {{
+            sessionStorage.setItem(storageKey, text);
+            window.speechSynthesis.cancel();
+            const utterance = new SpeechSynthesisUtterance(text);
+            utterance.rate = 0.95;
+            utterance.pitch = 1.0;
+            utterance.volume = 1.0;
+            const pickVoice = () => {{
+                const voices = window.speechSynthesis.getVoices();
+                const preferred = voices.find(v => /english|en-/i.test(v.lang));
+                if (preferred) utterance.voice = preferred;
+                window.speechSynthesis.speak(utterance);
+            }};
+            if (window.speechSynthesis.getVoices().length) {{
+                pickVoice();
+            }} else {{
+                window.speechSynthesis.onvoiceschanged = pickVoice;
+            }}
+        }}
+        </script>
+        """,
+        height=0,
+    )
 
 
 def contributions_table(contributions: dict[str, float]) -> pd.DataFrame:
@@ -1005,13 +1010,15 @@ def assistant_page(solvents: pd.DataFrame, reactions: pd.DataFrame) -> None:
 
     route = st.session_state["assistant_route"]
     extracted = route["extracted"]
-    missing_text = ", ".join(route["missing"]) if route["missing"] else "nothing critical"
+    other_workflows = [
+        name for name in ["Process Analysis", "Solvent Flashcards", "Feedback History", "Local Data"]
+        if name != route["feature"]
+    ]
+    other_workflow_text = ", ".join(other_workflows)
     assistant_script = (
-        f"Hello. Based on your process description, I recommend the {route['feature']} feature. "
-        f"I found reaction type {extracted['reaction_type'] or 'not specified'}, current solvent "
-        f"{extracted['current_solvent'] or 'not specified'}, yield {extracted['yield_percent'] or 'not specified'}, "
-        f"and waste {extracted['waste_kg'] or 'not specified'}. Missing information: {missing_text}. "
-        "Let's get you started. First, review the extracted data, then open the recommended workflow."
+        f"Hello. I recommend the {route['feature']} workflow for this request. "
+        f"You can also use {other_workflow_text} if you want a different view. "
+        "Let's get you started."
     )
 
     st.markdown(
@@ -1021,31 +1028,16 @@ def assistant_page(solvents: pd.DataFrame, reactions: pd.DataFrame) -> None:
             <h2 style="color:#0F172A; margin:0;">{route['feature']}</h2>
             <p style="color:#475569; margin:8px 0 0 0;">Confidence: {route['confidence'] * 100:.0f}%</p>
             <p style="color:#0F172A; margin:12px 0 0 0;"><b>Assistant says:</b> {assistant_script}</p>
+            <div style="margin-top:14px; display:grid; grid-template-columns:repeat(3,minmax(140px,1fr)); gap:10px;">
+                <div class="gc-extract-item"><b>Also available</b><br>{other_workflows[0]}</div>
+                <div class="gc-extract-item"><b>Also available</b><br>{other_workflows[1]}</div>
+                <div class="gc-extract-item"><b>Also available</b><br>{other_workflows[2]}</div>
+            </div>
         </div>
         """,
         unsafe_allow_html=True,
     )
-    voice_panel("Assistant recommendation", assistant_script, "assistant-route")
-
-    st.markdown("#### What I extracted")
-    st.markdown(
-        f"""
-        <div class="gc-extract-grid">
-            <div class="gc-extract-item"><b>Reaction</b><br>{extracted['reaction_type'] or 'Not found'}</div>
-            <div class="gc-extract-item"><b>Solvent</b><br>{extracted['current_solvent'] or 'Not found'}</div>
-            <div class="gc-extract-item"><b>Yield</b><br>{extracted['yield_percent'] if extracted['yield_percent'] is not None else 'Not found'}</div>
-            <div class="gc-extract-item"><b>Waste</b><br>{extracted['waste_kg'] if extracted['waste_kg'] is not None else 'Not found'}</div>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-    st.markdown("#### Why this route")
-    for reason in route["reasons"]:
-        st.write(f"- {reason}")
-
-    if route["missing"]:
-        st.warning("Missing before full automation: " + ", ".join(route["missing"]) + ". Defaults will be used if you continue.")
+    auto_speak(assistant_script, f"assistant-route-{route['feature'].replace(' ', '-')}")
 
     if st.button("Open recommended workflow", use_container_width=True):
         defaults = {
