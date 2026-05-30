@@ -487,18 +487,31 @@ def metric_row(current: dict, best: dict | None = None) -> None:
     cols[3].metric("Atom Economy", f"{current['atom_economy']:.1f}%")
 
 
-def auto_speak(script: str, key: str) -> None:
+def assistant_voice_player(script: str, key: str) -> None:
     """Local browser text-to-speech output. No external AI API is called."""
     if st.session_state.get("voice_muted", False):
+        st.caption("Assistant voice is muted.")
         return
     payload = json.dumps(script)
     components.html(
         f"""
+        <button id="play-{key}" style="
+            width:100%;
+            border:1px solid #0F766E;
+            background:#0F766E;
+            color:#F8FAFC;
+            border-radius:8px;
+            padding:10px 14px;
+            font-weight:800;
+            cursor:pointer;
+            font-family:Arial, sans-serif;">
+            Play assistant voice
+        </button>
         <script>
         const text = {payload};
-        const storageKey = "greenchem_voice_{key}";
-        if ("speechSynthesis" in window && sessionStorage.getItem(storageKey) !== text) {{
-            sessionStorage.setItem(storageKey, text);
+        const button = document.getElementById("play-{key}");
+        const speak = () => {{
+            if (!("speechSynthesis" in window)) return;
             window.speechSynthesis.cancel();
             const utterance = new SpeechSynthesisUtterance(text);
             utterance.rate = 1.5;
@@ -518,10 +531,11 @@ def auto_speak(script: str, key: str) -> None:
             }} else {{
                 window.speechSynthesis.onvoiceschanged = pickVoice;
             }}
-        }}
+        }};
+        button.addEventListener("click", speak);
         </script>
         """,
-        height=0,
+        height=52,
     )
 
 
@@ -1040,7 +1054,7 @@ def assistant_page(solvents: pd.DataFrame, reactions: pd.DataFrame) -> None:
         """,
         unsafe_allow_html=True,
     )
-    auto_speak(assistant_script, f"assistant-route-{route['feature'].replace(' ', '-')}")
+    assistant_voice_player(assistant_script, f"assistant-route-{route['feature'].replace(' ', '-')}")
 
     if st.button("Open recommended workflow", use_container_width=True):
         defaults = {
@@ -1054,9 +1068,9 @@ def assistant_page(solvents: pd.DataFrame, reactions: pd.DataFrame) -> None:
             st.session_state["assistant_prefill"] = defaults
             st.session_state["analysis_step"] = 1
             st.session_state.pop("analysis", None)
-            st.session_state["pending_page_nav"] = "Analysis"
+            st.session_state["current_page"] = "Analysis"
         else:
-            st.session_state["pending_page_nav"] = route["feature"]
+            st.session_state["current_page"] = route["feature"]
         st.rerun()
 
 
@@ -1829,16 +1843,16 @@ def main() -> None:
     st.markdown(CSS, unsafe_allow_html=True)
     solvents, reactions = cached_data()
     pages = ["AI Assistant", "Analysis", "Solvent Flashcards", "Feedback History", "Local Data"]
-    pending_page = st.session_state.pop("pending_page_nav", None)
-    page_index = pages.index(pending_page) if pending_page in pages else pages.index(st.session_state.get("page_nav", "AI Assistant")) if st.session_state.get("page_nav", "AI Assistant") in pages else 0
+    current_page = st.session_state.get("current_page", "AI Assistant")
+    page_index = pages.index(current_page) if current_page in pages else 0
     with st.sidebar:
         st.header("GreenChem AI")
         page = st.radio(
             "Navigation",
             pages,
             index=page_index,
-            key="page_nav",
         )
+        st.session_state["current_page"] = page
         st.toggle("Mute assistant voice", key="voice_muted", value=st.session_state.get("voice_muted", False))
         st.markdown("---")
         st.caption("Decision engine: RDKit features, Random Forest toxicity support, transparent GreenScore, ChromaDB RAG, local Ollama explanation.")
