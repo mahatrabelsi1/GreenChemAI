@@ -489,7 +489,7 @@ def metric_row(current: dict, best: dict | None = None) -> None:
 
 def voice_panel(title: str, script: str, key: str) -> None:
     """Local browser text-to-speech guidance. No external AI API is called."""
-    with st.expander(f"Voice guide: {title}", expanded=False):
+    with st.expander(f"Assistant voice: {title}", expanded=False):
         st.write(script)
         if st.session_state.get("voice_muted", False):
             st.caption("Voice is muted from the sidebar.")
@@ -969,11 +969,6 @@ def route_chemist_problem(problem: str, solvents: pd.DataFrame, reactions: pd.Da
 def assistant_page(solvents: pd.DataFrame, reactions: pd.DataFrame) -> None:
     st.title("AI Process Assistant")
     st.caption("Describe the chemistry problem in plain language. The assistant routes you to the right GreenChem AI workflow.")
-    voice_panel(
-        "AI Process Assistant",
-        "Describe your chemistry process in normal language. Mention the reaction type, current solvent, yield, waste amount, and what problem you want to solve. I will extract the useful details and route you to the right GreenChem AI workflow.",
-        "assistant-intro",
-    )
 
     st.markdown(
         """
@@ -986,26 +981,32 @@ def assistant_page(solvents: pd.DataFrame, reactions: pd.DataFrame) -> None:
         unsafe_allow_html=True,
     )
 
-    if hasattr(st, "audio_input"):
-        audio = st.audio_input("Voice note prototype")
-        if audio:
-            st.info("Voice captured. Local speech-to-text is not enabled yet, so type the process problem below for routing.")
-
     problem = st.text_area(
         "Chemist problem statement",
         height=150,
+        key="assistant_problem",
         placeholder="Describe the reaction, current solvent, yield, waste, safety issue, or optimization goal...",
     )
 
-    if not st.button("Route my problem", type="primary"):
+    if st.button("Route my problem", type="primary"):
+        if not problem.strip():
+            st.warning("Describe the chemistry problem first.")
+            return
+        st.session_state["assistant_route"] = route_chemist_problem(problem, solvents, reactions)
+
+    if "assistant_route" not in st.session_state:
         return
 
-    if not problem.strip():
-        st.warning("Describe the chemistry problem first.")
-        return
-
-    route = route_chemist_problem(problem, solvents, reactions)
+    route = st.session_state["assistant_route"]
     extracted = route["extracted"]
+    missing_text = ", ".join(route["missing"]) if route["missing"] else "nothing critical"
+    assistant_script = (
+        f"Hello. Based on your process description, I recommend the {route['feature']} feature. "
+        f"I found reaction type {extracted['reaction_type'] or 'not specified'}, current solvent "
+        f"{extracted['current_solvent'] or 'not specified'}, yield {extracted['yield_percent'] or 'not specified'}, "
+        f"and waste {extracted['waste_kg'] or 'not specified'}. Missing information: {missing_text}. "
+        "Let's get you started. First, review the extracted data, then open the recommended workflow."
+    )
 
     st.markdown(
         f"""
@@ -1013,10 +1014,12 @@ def assistant_page(solvents: pd.DataFrame, reactions: pd.DataFrame) -> None:
             <span class="gc-route-badge">Recommended workflow</span>
             <h2 style="color:#0F172A; margin:0;">{route['feature']}</h2>
             <p style="color:#475569; margin:8px 0 0 0;">Confidence: {route['confidence'] * 100:.0f}%</p>
+            <p style="color:#0F172A; margin:12px 0 0 0;"><b>Assistant says:</b> {assistant_script}</p>
         </div>
         """,
         unsafe_allow_html=True,
     )
+    voice_panel("Assistant recommendation", assistant_script, "assistant-route")
 
     st.markdown("#### What I extracted")
     st.markdown(
@@ -1416,11 +1419,6 @@ def analysis_page(solvents: pd.DataFrame, reactions: pd.DataFrame) -> None:
 
     if step == 1:
         st.subheader("Process Input")
-        voice_panel(
-            "Process Input",
-            "Enter the reaction type, current solvent, yield percentage, and waste produced. These values are used by the deterministic scoring engine. Llama does not make the recommendation.",
-            "analysis-step-1",
-        )
         st.markdown(pipeline_diagram(), unsafe_allow_html=True)
         prefill = st.session_state.get("assistant_prefill", {})
         reaction_options = reaction_types(reactions)
@@ -1511,11 +1509,6 @@ def analysis_page(solvents: pd.DataFrame, reactions: pd.DataFrame) -> None:
 
     if step == 2:
         st.subheader("Step 2: Results Summary")
-        voice_panel(
-            "Results Summary",
-            f"The current process uses {current['solvent']} with a GreenScore of {current['green_score']:.1f}. The system recommends {best['solvent']} with an optimized GreenScore of {best['green_score']:.1f}. Recommendation confidence is {recommendation_confidence(current, best, recommendations)['score']:.0f} percent.",
-            "analysis-step-2",
-        )
         st.markdown(decision_card(current, best, recommendations), unsafe_allow_html=True)
         st.markdown(process_flow(current, best), unsafe_allow_html=True)
         st.markdown(confidence_panel(current, best, recommendations), unsafe_allow_html=True)
@@ -1552,11 +1545,6 @@ def analysis_page(solvents: pd.DataFrame, reactions: pd.DataFrame) -> None:
 
     if step == 3:
         st.subheader("Step 3: Before / After")
-        voice_panel(
-            "Before and After",
-            f"This step compares the current process with the optimized process. GreenScore increases by {best['green_score'] - current['green_score']:.1f} points. Toxicity decreases by {current['toxicity_score'] - best['toxicity_score']:.1f} points. Estimated waste decreases from {current['waste_kg']:.1f} kilograms to {best['waste_kg']:.1f} kilograms.",
-            "analysis-step-3",
-        )
         st.markdown(before_after_insights(current, best), unsafe_allow_html=True)
         st.dataframe(before_after_table(current, best), hide_index=True, use_container_width=True)
         with st.expander("What these metrics mean"):
@@ -1569,11 +1557,6 @@ def analysis_page(solvents: pd.DataFrame, reactions: pd.DataFrame) -> None:
 
     if step == 4:
         st.subheader("Step 4: Recommendation Summary")
-        voice_panel(
-            "Recommendation",
-            f"Recommendation result. You should avoid using {current['solvent']} for this process when a greener substitute is feasible. Use {best['solvent']} instead because it lowers toxicity by {toxicity_reduction:.1f} points, improves GreenScore by {improvement:.1f} points, and reduces estimated waste.",
-            "analysis-step-4",
-        )
         st.markdown(decision_card(current, best, recommendations), unsafe_allow_html=True)
         st.markdown(
             recommendation_story(current, best, improvement, toxicity_reduction, toxicity_pct),
@@ -1594,11 +1577,6 @@ def analysis_page(solvents: pd.DataFrame, reactions: pd.DataFrame) -> None:
     if step == 5:
         st.subheader("Step 5: Advanced Analysis")
         st.caption("Expert review workspace: compare alternatives, inspect score drivers, review retrieved sources, and validate the recommendation.")
-        voice_panel(
-            "Advanced Analysis",
-            "This expert review workspace shows the top ranked alternatives, the explanation factors, the scientific RAG sources, expert memory, and human validation controls. Use this page to inspect the decision before accepting or rejecting it.",
-            "analysis-step-5",
-        )
         overview_tab, xai_tab, sources_tab, validation_tab = st.tabs(
             ["Overview", "XAI", "Scientific Sources", "Validation"]
         )
@@ -1856,7 +1834,7 @@ def main() -> None:
             ["AI Assistant", "Analysis", "Solvent Flashcards", "Feedback History", "Local Data"],
             key="page_nav",
         )
-        st.toggle("Mute voice guidance", key="voice_muted", value=st.session_state.get("voice_muted", False))
+        st.toggle("Mute assistant voice", key="voice_muted", value=st.session_state.get("voice_muted", False))
         st.markdown("---")
         st.caption("Decision engine: RDKit features, Random Forest toxicity support, transparent GreenScore, ChromaDB RAG, local Ollama explanation.")
 
