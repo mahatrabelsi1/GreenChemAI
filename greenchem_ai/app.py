@@ -1444,6 +1444,12 @@ def analysis_page(solvents: pd.DataFrame, reactions: pd.DataFrame) -> None:
 
     if step == 1:
         st.subheader("Process Input")
+        auto_script = (
+            "Welcome to Process Analysis. Enter the reaction type, current solvent, yield percentage, "
+            "and waste amount. Then click Analyze Process. The system will calculate the current GreenScore, "
+            "rank greener solvent alternatives, and guide you through the result step by step."
+        )
+        assistant_voice_player(auto_script, "analysis-page-guide")
         st.markdown(pipeline_diagram(), unsafe_allow_html=True)
         prefill = st.session_state.get("assistant_prefill", {})
         reaction_options = reaction_types(reactions)
@@ -1768,6 +1774,10 @@ def _score_color(score: float) -> str:
 def flashcards_page(solvents: pd.DataFrame) -> None:
     st.title("Solvent Flashcards")
     st.caption("Compare solvent hazard, sustainability, process fit, and substitution quality from the local GreenChem AI dataset.")
+    assistant_voice_player(
+        "Welcome to Solvent Flashcards. Use this page to compare solvents by toxicity, GreenScore, biodegradability, regulatory risk, boiling point, polarity, and GSK style score. Choose a focus solvent, filter by classification, or sort the library to inspect greener alternatives.",
+        "flashcards-page-guide",
+    )
 
     classifications = ["All"] + sorted(solvents["chem21_classification"].dropna().unique().tolist())
     c1, c2, c3 = st.columns([0.42, 0.29, 0.29])
