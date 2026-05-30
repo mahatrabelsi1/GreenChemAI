@@ -1,0 +1,15 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.venv/
+venv/
+env/
+
+greenchem_ai/data/chroma_store/
+greenchem_ai/data/expert_memory_store/
+greenchem_ai/data/*.joblib
+
+.DS_Store
+Thumbs.db

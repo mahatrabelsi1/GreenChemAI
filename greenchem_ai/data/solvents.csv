@@ -1,0 +1,16 @@
+name,smiles,toxicity_score,green_score,voc_score,biodegradability_score,regulatory_risk,boiling_point,polarity_index,chem21_classification,gsk_score
+DMF,CN(C)C=O,78,25,55,25,85,153,6.4,Problematic,7
+DMSO,CS(=O)C,35,62,45,55,35,189,7.2,Recommended,4
+Acetone,CC(=O)C,28,70,70,70,25,56,5.1,Recommended,3
+Ethanol,CCO,18,88,65,90,15,78,5.2,Preferred,2
+Methanol,CO,55,55,65,80,45,65,5.1,Problematic,6
+Acetonitrile,CC#N,62,42,60,35,65,82,5.8,Problematic,6
+Toluene,Cc1ccccc1,68,35,50,30,70,111,2.4,Problematic,7
+Dichloromethane,ClCCl,88,12,40,10,92,40,3.1,Hazardous,9
+Ethyl Acetate,CCOC(=O)C,24,82,72,82,20,77,4.4,Preferred,3
+Ethyl Lactate,CC(O)C(=O)OCC,16,92,82,92,10,154,4.3,Preferred,2
+2-MeTHF,CC1CCCO1,30,78,68,72,25,80,4.0,Recommended,3
+Water,O,5,100,100,100,5,100,9.0,Preferred,1
+Cyclopentyl Methyl Ether,COC1CCCC1,34,75,64,65,28,106,3.1,Recommended,3
+Propylene Carbonate,CC1COC(=O)O1,20,85,90,78,12,242,6.1,Preferred,2
+Glycerol,C(C(CO)O)O,8,94,95,95,8,290,6.0,Preferred,1
