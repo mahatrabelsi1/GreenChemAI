@@ -2,18 +2,17 @@ from __future__ import annotations
 
 from datetime import datetime
 from io import BytesIO
-import json
 import re
 
 import pandas as pd
 import streamlit as st
-import streamlit.components.v1 as components
 
 from ai.llama_explainer import explain_with_ollama
 from ai.rag_engine import retrieve_expert_memory_context, retrieve_scientific_context
 from core.feedback_engine import load_feedback, store_feedback
 from core.optimization_engine import analyze_current_process, recommend_solvents
 from core.reaction_database import get_reaction, load_reactions, reaction_types
+from core.science_backend_bridge import bridge_evidence
 from core.solvent_database import get_solvent, load_solvents, solvent_names
 from core.xai_engine import recommendation_xai
 
@@ -204,8 +203,31 @@ CSS = """
         background: #FFFFFF;
         border: 1px solid #CBD5E1;
         border-radius: 8px;
-        padding: 14px;
+        padding: 14px 14px 14px 18px;
         box-shadow: 0 8px 22px rgba(15, 23, 42, 0.05);
+        position: relative;
+        overflow: hidden;
+    }
+    .gc-compare-card:before {
+        content: "";
+        position: absolute;
+        left: 0;
+        top: 0;
+        width: 5px;
+        height: 100%;
+        background: linear-gradient(180deg, #0F766E, #22C55E);
+    }
+    .gc-compare-icon {
+        width: 30px;
+        height: 30px;
+        border-radius: 999px;
+        background: #D1FAE5;
+        color: #0F766E;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-weight: 950;
+        margin-bottom: 8px;
     }
     .gc-compare-label {
         color: #64748B;
@@ -233,6 +255,55 @@ CSS = """
         padding: 14px;
         color: #134E4A;
         margin: 10px 0 16px 0;
+    }
+    .gc-before-hero {
+        background: linear-gradient(135deg, #FFFFFF 0%, #ECFEFF 100%);
+        border: 1px solid #99F6E4;
+        border-radius: 8px;
+        padding: 16px;
+        box-shadow: 0 12px 30px rgba(15, 118, 110, 0.09);
+        margin: 12px 0 16px 0;
+    }
+    .gc-before-flow {
+        display: grid;
+        grid-template-columns: 1fr 74px 1fr;
+        gap: 12px;
+        align-items: stretch;
+    }
+    .gc-before-box {
+        background: #FFFFFF;
+        border: 1px solid #CBD5E1;
+        border-radius: 8px;
+        padding: 14px;
+    }
+    .gc-before-arrow {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #0F766E;
+        font-size: 28px;
+        font-weight: 950;
+    }
+    .gc-compare-spark {
+        height: 7px;
+        background: #E2E8F0;
+        border-radius: 999px;
+        overflow: hidden;
+        margin-top: 10px;
+    }
+    .gc-compare-spark-fill {
+        height: 7px;
+        background: linear-gradient(90deg, #0F766E, #22C55E);
+        border-radius: 999px;
+    }
+    .gc-status-pill {
+        display: inline-block;
+        padding: 3px 8px;
+        border-radius: 999px;
+        background: #D1FAE5;
+        color: #0F766E;
+        font-size: 12px;
+        font-weight: 900;
     }
     .gc-rec-hero {
         background: linear-gradient(135deg, #0F766E 0%, #14B8A6 100%);
@@ -487,81 +558,6 @@ def metric_row(current: dict, best: dict | None = None) -> None:
     cols[3].metric("Atom Economy", f"{current['atom_economy']:.1f}%")
 
 
-def assistant_voice_player(script: str, key: str) -> None:
-    """Local browser text-to-speech output. No external AI API is called."""
-    if st.session_state.get("voice_muted", False):
-        st.caption("Assistant voice is muted.")
-        return
-    payload = json.dumps(script)
-    components.html(
-        f"""
-        <div style="display:flex; gap:10px; align-items:center; font-family:Arial, sans-serif;">
-            <button id="play-{key}" style="
-                border:1px solid #0F766E;
-                background:#0F766E;
-                color:#F8FAFC;
-                border-radius:8px;
-                padding:10px 14px;
-                font-weight:800;
-                cursor:pointer;">
-                Listen to assistant
-            </button>
-            <button id="stop-{key}" style="
-                border:1px solid #CBD5E1;
-                background:#FFFFFF;
-                color:#0F172A;
-                border-radius:8px;
-                padding:10px 14px;
-                font-weight:800;
-                cursor:pointer;">
-                Stop
-            </button>
-            <span id="status-{key}" style="color:#475569; font-size:12px;">Click listen to hear the assistant.</span>
-        </div>
-        <script>
-        const text = {payload};
-        const playButton = document.getElementById("play-{key}");
-        const stopButton = document.getElementById("stop-{key}");
-        const status = document.getElementById("status-{key}");
-        const speak = () => {{
-            if (!("speechSynthesis" in window)) {{
-                status.textContent = "Voice is not supported in this browser.";
-                return;
-            }}
-            window.speechSynthesis.cancel();
-            const utterance = new SpeechSynthesisUtterance(text);
-            utterance.rate = 2.0;
-            utterance.pitch = 1.12;
-            utterance.volume = 1.0;
-            utterance.onstart = () => status.textContent = "Speaking...";
-            utterance.onend = () => status.textContent = "Done.";
-            utterance.onerror = () => status.textContent = "Browser blocked voice. Try clicking again.";
-            const pickVoice = () => {{
-                const voices = window.speechSynthesis.getVoices();
-                const femaleVoice =
-                    voices.find(v => /female|woman|zira|samantha|victoria|karen|serena|susan|hazel|aria|jenny|natural/i.test(v.name) && /english|en-/i.test(v.lang)) ||
-                    voices.find(v => /female|woman|zira|samantha|victoria|karen|serena|susan|hazel|aria|jenny|natural/i.test(v.name)) ||
-                    voices.find(v => /english|en-/i.test(v.lang));
-                if (femaleVoice) utterance.voice = femaleVoice;
-                window.speechSynthesis.speak(utterance);
-            }};
-            if (window.speechSynthesis.getVoices().length) {{
-                pickVoice();
-            }} else {{
-                window.speechSynthesis.onvoiceschanged = pickVoice;
-            }}
-        }};
-        playButton.addEventListener("click", speak);
-        stopButton.addEventListener("click", () => {{
-            if ("speechSynthesis" in window) window.speechSynthesis.cancel();
-            status.textContent = "Stopped.";
-        }});
-        </script>
-        """,
-        height=56,
-    )
-
-
 def contributions_table(contributions: dict[str, float]) -> pd.DataFrame:
     labels = {
         "solvent_green": "Solvent green score",
@@ -659,6 +655,39 @@ def before_after_table(current: dict, best: dict) -> pd.DataFrame:
     return pd.DataFrame(table)
 
 
+def style_before_after_table(df: pd.DataFrame):
+    def color_interpretation(value: str) -> str:
+        if str(value).startswith("Improved"):
+            return "background-color: #D1FAE5; color: #0F766E; font-weight: 800"
+        if str(value).startswith("Worse"):
+            return "background-color: #FEE2E2; color: #991B1B; font-weight: 800"
+        return "background-color: #F1F5F9; color: #475569; font-weight: 800"
+
+    return df.style.map(color_interpretation, subset=["Interpretation"])
+
+
+def before_after_flow(current: dict, best: dict) -> str:
+    return f"""
+    <div class="gc-before-hero">
+        <div class="gc-before-flow">
+            <div class="gc-before-box">
+                <p class="gc-hero-label">Current process</p>
+                <h3 style="color:#EF4444; margin:0;">{current['solvent']}</h3>
+                <p style="color:#0F172A; margin:8px 0 0 0; font-size:24px; font-weight:900;">GreenScore {current['green_score']:.1f}</p>
+                <p style="color:#475569; margin:6px 0 0 0;">Toxicity {current['toxicity_score']:.1f} | Waste {current['waste_kg']:.1f} kg</p>
+            </div>
+            <div class="gc-before-arrow">-&gt;</div>
+            <div class="gc-before-box">
+                <p class="gc-hero-label">Optimized process</p>
+                <h3 style="color:#22C55E; margin:0;">{best['solvent']}</h3>
+                <p style="color:#0F172A; margin:8px 0 0 0; font-size:24px; font-weight:900;">GreenScore {best['green_score']:.1f}</p>
+                <p style="color:#475569; margin:6px 0 0 0;">Toxicity {best['toxicity_score']:.1f} | Waste {best['waste_kg']:.1f} kg</p>
+            </div>
+        </div>
+    </div>
+    """
+
+
 def before_after_insights(current: dict, best: dict) -> str:
     green_delta = best["green_score"] - current["green_score"]
     toxicity_delta = current["toxicity_score"] - best["toxicity_score"]
@@ -667,24 +696,32 @@ def before_after_insights(current: dict, best: dict) -> str:
     return f"""
     <div class="gc-compare-grid">
         <div class="gc-compare-card">
+            <div class="gc-compare-icon">GS</div>
             <p class="gc-compare-label">GreenScore Gain</p>
             <p class="gc-compare-value" style="color:{score_color(best['green_score'])};">+{green_delta:.1f}</p>
             <p class="gc-compare-note">Higher means greener overall process performance.</p>
+            <div class="gc-compare-spark"><div class="gc-compare-spark-fill" style="width:92%;"></div></div>
         </div>
         <div class="gc-compare-card">
+            <div class="gc-compare-icon">TX</div>
             <p class="gc-compare-label">Toxicity Reduction</p>
             <p class="gc-compare-value" style="color:#22C55E;">-{toxicity_delta:.1f}</p>
             <p class="gc-compare-note">Lower toxicity score means safer solvent profile.</p>
+            <div class="gc-compare-spark"><div class="gc-compare-spark-fill" style="width:88%;"></div></div>
         </div>
         <div class="gc-compare-card">
+            <div class="gc-compare-icon">EF</div>
             <p class="gc-compare-label">E-Factor Reduction</p>
             <p class="gc-compare-value" style="color:#22C55E;">-{efactor_delta:.3f}</p>
             <p class="gc-compare-note">Lower E-Factor means less waste per product mass.</p>
+            <div class="gc-compare-spark"><div class="gc-compare-spark-fill" style="width:72%;"></div></div>
         </div>
         <div class="gc-compare-card">
+            <div class="gc-compare-icon">kg</div>
             <p class="gc-compare-label">Waste Reduction</p>
             <p class="gc-compare-value" style="color:#22C55E;">-{waste_delta:.1f} kg</p>
             <p class="gc-compare-note">Estimated process waste reduction from substitution.</p>
+            <div class="gc-compare-spark"><div class="gc-compare-spark-fill" style="width:78%;"></div></div>
         </div>
     </div>
     <div class="gc-insight">
@@ -864,25 +901,64 @@ def expert_memory_summary(recommendations: list[dict]) -> str:
     return "".join(rows)
 
 
-def alternatives_cards(recommendations: list[dict]) -> str:
-    cards = []
+def render_alternatives_cards(recommendations: list[dict]) -> None:
+    cols = st.columns(min(5, len(recommendations)))
     for idx, rec in enumerate(recommendations, start=1):
-        fill = score_color(rec["green_score"])
-        cards.append(
-            f"""
-            <div class="gc-alt-card">
-                <span class="gc-alt-rank">#{idx}</span>
-                <h3 style="color:#0F172A; margin:0 0 6px 0; font-size:18px;">{rec['solvent']}</h3>
-                <p style="color:#64748B; margin:0 0 8px 0; font-size:12px; font-weight:800;">{rec['chem21_classification']}</p>
-                <p style="color:#0F172A; margin:0;"><b>GreenScore</b> {rec['green_score']:.1f}</p>
-                <div class="gc-mini-bar"><div class="gc-mini-fill" style="width:{rec['green_score']}%; background:{fill};"></div></div>
-                <p style="color:#475569; margin:0; font-size:13px;">Toxicity {rec['toxicity_score']:.1f}</p>
-                <p style="color:#475569; margin:2px 0 0 0; font-size:13px;">E-Factor {rec['e_factor']:.3f}</p>
-                <p style="color:#475569; margin:2px 0 0 0; font-size:13px;">Memory {rec.get('feedback_adjustment', 0):+.1f}</p>
-            </div>
-            """
-        )
-    return f'<div class="gc-alt-grid">{"".join(cards)}</div>'
+        with cols[(idx - 1) % len(cols)]:
+            with st.container(border=True):
+                st.markdown(f"**#{idx} {rec['solvent']}**")
+                st.caption(str(rec["chem21_classification"]))
+                st.metric("GreenScore", f"{rec['green_score']:.1f}")
+                st.progress(min(max(float(rec["green_score"]) / 100.0, 0.0), 1.0))
+                st.write(f"**Toxicity:** {rec['toxicity_score']:.1f}")
+                st.write(f"**E-Factor:** {rec['e_factor']:.3f}")
+                st.write(f"**Expert memory:** {rec.get('feedback_adjustment', 0):+.1f}")
+
+
+def backend_bridge_card(bridge: dict) -> str:
+    if not bridge or not bridge.get("available"):
+        reason = bridge.get("reason", "No bridge evidence available.") if bridge else "No bridge evidence available."
+        return f"""
+        <div class="gc-source-card" style="background:#F8FAFC;">
+            <p style="color:#64748B; font-size:12px; font-weight:900; text-transform:uppercase; margin:0 0 6px 0;">Backend evidence bridge</p>
+            <p style="color:#475569; margin:0;">{reason}</p>
+        </div>
+        """
+
+    current_ef = bridge.get("current_backend_efactor", {})
+    recommended_ef = bridge.get("recommended_backend_efactor", {})
+    current_alerts = bridge.get("current_structural_alerts") or ["No simple structural alerts detected."]
+    recommended_alerts = bridge.get("recommended_structural_alerts") or ["No simple structural alerts detected."]
+    ef_delta = bridge.get("backend_efactor_delta")
+    ef_text = f"{ef_delta:+.2f}" if isinstance(ef_delta, (int, float)) else "n/a"
+    return f"""
+    <div class="gc-source-card" style="background:#F0FDFA; border-color:#99F6E4;">
+        <p style="color:#0F766E; font-size:12px; font-weight:900; text-transform:uppercase; margin:0 0 6px 0;">Backend evidence bridge</p>
+        <h3 style="color:#0F172A; margin:0 0 8px 0;">{bridge['current_solvent']} -> {bridge['recommended_solvent']}</h3>
+        <div class="gc-decision-grid">
+            <div class="gc-decision-item"><b>HSP distance</b><br>{bridge.get('hsp_distance', 'n/a')}</div>
+            <div class="gc-decision-item"><b>Backend E-Factor delta</b><br>{ef_text}</div>
+            <div class="gc-decision-item"><b>Recommended family</b><br>{bridge.get('recommended_family', 'unknown')}</div>
+            <div class="gc-decision-item"><b>Density</b><br>{bridge.get('recommended_density', 0):.3f} g/mL</div>
+        </div>
+        <p style="color:#475569; margin:12px 0 0 0;"><b>Backend E-Factor:</b> current {current_ef.get('efactor', 'n/a')} vs recommended {recommended_ef.get('efactor', 'n/a')}</p>
+        <p style="color:#475569; margin:6px 0 0 0;"><b>Current alerts:</b> {'; '.join(current_alerts)}</p>
+        <p style="color:#475569; margin:6px 0 0 0;"><b>Recommended alerts:</b> {'; '.join(recommended_alerts)}</p>
+    </div>
+    """
+
+
+def backend_bridge_source_text(bridge: dict) -> str:
+    if not bridge or not bridge.get("available"):
+        return ""
+    current_ef = bridge.get("current_backend_efactor", {})
+    recommended_ef = bridge.get("recommended_backend_efactor", {})
+    return (
+        f"First-part backend bridge checked HSP similarity, density-based E-Factor, and simple structural alerts. "
+        f"HSP distance: {bridge.get('hsp_distance', 'n/a')}. "
+        f"Backend E-Factor current/recommended: {current_ef.get('efactor', 'n/a')} / {recommended_ef.get('efactor', 'n/a')}. "
+        f"Recommended family: {bridge.get('recommended_family', 'unknown')}."
+    )
 
 
 def recommendations_table(recommendations: list[dict]) -> pd.DataFrame:
@@ -914,7 +990,7 @@ def recommendations_table(recommendations: list[dict]) -> pd.DataFrame:
     )
 
 
-def contribution_bars(contributions: dict[str, float]) -> str:
+def render_contribution_bars(contributions: dict[str, float]) -> None:
     labels = {
         "solvent_green": "Solvent green score",
         "toxicity": "Low toxicity",
@@ -925,18 +1001,13 @@ def contribution_bars(contributions: dict[str, float]) -> str:
         "atom_economy": "Atom economy",
     }
     max_value = max(contributions.values()) if contributions else 1
-    rows = []
-    for key, value in sorted(contributions.items(), key=lambda item: item[1], reverse=True):
-        width = max(4, (value / max_value) * 100)
-        rows.append(
-            f"""
-            <div class="gc-component-row">
-                <div class="gc-component-head"><span>{labels.get(key, key)}</span><span>{value:.2f}</span></div>
-                <div class="gc-component-bar"><div class="gc-component-fill" style="width:{width:.1f}%;"></div></div>
-            </div>
-            """
-        )
-    return f'<div class="gc-component-panel">{"".join(rows)}</div>'
+    with st.container(border=True):
+        for key, value in sorted(contributions.items(), key=lambda item: item[1], reverse=True):
+            progress = 0.0 if max_value == 0 else min(max(float(value) / float(max_value), 0.0), 1.0)
+            left, right = st.columns([0.74, 0.26])
+            left.markdown(f"**{labels.get(key, key)}**")
+            right.markdown(f"<div style='text-align:right; font-weight:800;'>{value:.2f}</div>", unsafe_allow_html=True)
+            st.progress(progress)
 
 
 def route_chemist_problem(problem: str, solvents: pd.DataFrame, reactions: pd.DataFrame) -> dict:
@@ -1077,8 +1148,6 @@ def assistant_page(solvents: pd.DataFrame, reactions: pd.DataFrame) -> None:
         """,
         unsafe_allow_html=True,
     )
-    assistant_voice_player(assistant_script, f"assistant-route-{route['feature'].replace(' ', '-')}")
-
     if st.button("Open recommended workflow", use_container_width=True):
         defaults = {
             "reaction_type": extracted["reaction_type"] or "Esterification",
@@ -1097,9 +1166,20 @@ def assistant_page(solvents: pd.DataFrame, reactions: pd.DataFrame) -> None:
         st.rerun()
 
 
-def build_report(current: dict, best: dict, recommendations: list[dict], xai: dict, explanation: str, sources: list[str]) -> str:
+def build_report(
+    current: dict,
+    best: dict,
+    recommendations: list[dict],
+    xai: dict,
+    explanation: str,
+    sources: list[str],
+    bridge: dict | None = None,
+) -> str:
     lines = [
-        "# GreenChem AI Scientific Report",
+        "# GreenChem AI Decision Support Report",
+        "Explainable Green Chemistry Decision Support System",
+        "",
+        "GreenChem AI combines deterministic scientific scoring, solvent similarity analysis, scientific literature retrieval, expert-memory learning, and human validation to help chemists identify safer and more sustainable solvent alternatives before experimentation.",
         f"Generated: {datetime.now().isoformat(timespec='seconds')}",
         "",
         "## Current Process",
@@ -1122,6 +1202,21 @@ def build_report(current: dict, best: dict, recommendations: list[dict], xai: di
     ]
     for idx, rec in enumerate(recommendations, start=1):
         lines.append(f"{idx}. {rec['solvent']} - rank score {rec['rank_score']}, GreenScore {rec['green_score']}")
+    if bridge and bridge.get("available"):
+        current_ef = bridge.get("current_backend_efactor", {})
+        recommended_ef = bridge.get("recommended_backend_efactor", {})
+        lines.extend(
+            [
+                "",
+                "## First-Part Backend Evidence Bridge",
+                f"- Evidence source: {bridge.get('source')}",
+                f"- HSP distance: {bridge.get('hsp_distance')}",
+                f"- Backend E-Factor: {current_ef.get('efactor')} -> {recommended_ef.get('efactor')}",
+                f"- Recommended solvent family: {bridge.get('recommended_family')}",
+                f"- Current structural alerts: {'; '.join(bridge.get('current_structural_alerts') or ['None detected'])}",
+                f"- Recommended structural alerts: {'; '.join(bridge.get('recommended_structural_alerts') or ['None detected'])}",
+            ]
+        )
     lines.extend(
         [
             "",
@@ -1211,8 +1306,16 @@ def _minimal_pdf_from_text(text: str) -> bytes:
     return pdf.getvalue()
 
 
-def build_pdf_report(current: dict, best: dict, recommendations: list[dict], xai: dict, explanation: str, sources: list[str]) -> bytes:
-    report_text = build_report(current, best, recommendations, xai, explanation, sources)
+def build_pdf_report(
+    current: dict,
+    best: dict,
+    recommendations: list[dict],
+    xai: dict,
+    explanation: str,
+    sources: list[str],
+    bridge: dict | None = None,
+) -> bytes:
+    report_text = build_report(current, best, recommendations, xai, explanation, sources, bridge)
     try:
         from reportlab.lib import colors
         from reportlab.lib.pagesizes import letter
@@ -1244,7 +1347,7 @@ def build_pdf_report(current: dict, best: dict, recommendations: list[dict], xai
         story = []
         story.append(
             Table(
-                [[p("GreenChem AI", "Title"), p(f"Scientific Report<br/>{datetime.now().date().isoformat()}")]],
+                [[p("GreenChem AI", "Title"), p(f"Decision Support Report<br/>{datetime.now().date().isoformat()}")]],
                 colWidths=[4.6 * inch, 2.2 * inch],
                 style=TableStyle(
                     [
@@ -1260,6 +1363,13 @@ def build_pdf_report(current: dict, best: dict, recommendations: list[dict], xai
             )
         )
         story.append(Spacer(1, 12))
+        story.append(p("Explainable Green Chemistry Decision Support System", "Heading2"))
+        story.append(
+            p(
+                "GreenChem AI combines deterministic scientific scoring, solvent similarity analysis, scientific literature retrieval, expert-memory learning, and human validation to help chemists identify safer and more sustainable solvent alternatives before experimentation."
+            )
+        )
+        story.append(Spacer(1, 10))
 
         improvement = best["green_score"] - current["green_score"]
         confidence = recommendation_confidence(current, best, recommendations)
@@ -1411,6 +1521,32 @@ def build_pdf_report(current: dict, best: dict, recommendations: list[dict], xai
                 reason = f"E-Factor is {rec['e_factor'] - best['e_factor']:.3f} higher than {best['solvent']}."
             story.append(p(f"- Why not {rec['solvent']}? {reason}"))
 
+        if bridge and bridge.get("available"):
+            current_ef = bridge.get("current_backend_efactor", {})
+            recommended_ef = bridge.get("recommended_backend_efactor", {})
+            story.append(p("First-Part Backend Evidence Bridge", "Heading2"))
+            bridge_rows = [
+                ["Evidence", "Value"],
+                ["HSP distance", str(bridge.get("hsp_distance", "n/a"))],
+                ["Backend E-Factor", f"{current_ef.get('efactor', 'n/a')} -> {recommended_ef.get('efactor', 'n/a')}"],
+                ["Recommended family", str(bridge.get("recommended_family", "unknown"))],
+                ["Recommended density", f"{bridge.get('recommended_density', 0):.3f} g/mL"],
+            ]
+            bridge_table = Table(bridge_rows, colWidths=[1.8 * inch, 4.6 * inch])
+            bridge_table.setStyle(
+                TableStyle(
+                    [
+                        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#0F766E")),
+                        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+                        ("GRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#CBD5E1")),
+                        ("BACKGROUND", (0, 1), (-1, -1), colors.HexColor("#F8FAFC")),
+                        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                    ]
+                )
+            )
+            story.append(bridge_table)
+            story.append(Spacer(1, 10))
+
         story.append(p("Explanation", "Heading2"))
         story.append(p(explanation[:1200]))
         story.append(Spacer(1, 10))
@@ -1432,7 +1568,7 @@ def build_pdf_report(current: dict, best: dict, recommendations: list[dict], xai
 
 def analysis_page(solvents: pd.DataFrame, reactions: pd.DataFrame) -> None:
     st.title("GreenChem AI")
-    st.caption("Deterministic green solvent substitution and process optimization. Llama explains; it does not decide.")
+    st.caption("Explainable Green Chemistry Decision Support System. Llama explains; deterministic science decides.")
 
     if "analysis_step" not in st.session_state:
         st.session_state["analysis_step"] = 1
@@ -1457,12 +1593,6 @@ def analysis_page(solvents: pd.DataFrame, reactions: pd.DataFrame) -> None:
 
     if step == 1:
         st.subheader("Process Input")
-        auto_script = (
-            "Welcome to Process Analysis. Enter the reaction type, current solvent, yield percentage, "
-            "and waste amount. Then click Analyze Process. The system will calculate the current GreenScore, "
-            "rank greener solvent alternatives, and guide you through the result step by step."
-        )
-        assistant_voice_player(auto_script, "analysis-page-guide")
         st.markdown(pipeline_diagram(), unsafe_allow_html=True)
         prefill = st.session_state.get("assistant_prefill", {})
         reaction_options = reaction_types(reactions)
@@ -1496,6 +1626,11 @@ def analysis_page(solvents: pd.DataFrame, reactions: pd.DataFrame) -> None:
             xai = recommendation_xai(best, current)
             query = f"{reaction_type} solvent substitution E-Factor toxicity {notes}"
             rag_context, rag_sources = retrieve_scientific_context(query)
+            bridge = bridge_evidence(reaction_type, current_solvent, best["solvent"])
+            bridge_context = backend_bridge_source_text(bridge)
+            if bridge_context:
+                rag_context = list(rag_context) + [bridge_context]
+                rag_sources = list(rag_sources) + ["First-part science backend bridge"]
             expert_context, expert_sources = retrieve_expert_memory_context(
                 reaction_type,
                 current_solvent,
@@ -1518,6 +1653,7 @@ def analysis_page(solvents: pd.DataFrame, reactions: pd.DataFrame) -> None:
                 "rag_sources": rag_sources,
                 "expert_context": expert_context,
                 "expert_sources": expert_sources,
+                "bridge_evidence": bridge,
                 "explanation": explanation,
                 "ollama_ok": ollama_ok,
                 "notes": notes,
@@ -1554,43 +1690,20 @@ def analysis_page(solvents: pd.DataFrame, reactions: pd.DataFrame) -> None:
     if step == 2:
         st.subheader("Step 2: Results Summary")
         st.markdown(decision_card(current, best, recommendations), unsafe_allow_html=True)
-        st.markdown(process_flow(current, best), unsafe_allow_html=True)
-        st.markdown(confidence_panel(current, best, recommendations), unsafe_allow_html=True)
-        h1, h2, h3 = st.columns(3)
-        h1.markdown(
-            hero_card(
-                "Current Process",
-                f"{current['green_score']:.1f}",
-                f"{current['solvent']} GreenScore",
-                score_color(current["green_score"]),
-            ),
-            unsafe_allow_html=True,
-        )
-        h2.markdown(
-            hero_card(
-                "Recommended Solvent",
-                best["solvent"],
-                f"{best['chem21_classification']} classification",
-                "#0F766E",
-            ),
-            unsafe_allow_html=True,
-        )
-        h3.markdown(
-            hero_card(
-                "Optimized Score",
-                f"{best['green_score']:.1f}",
-                f"{improvement:+.1f} point improvement",
-                score_color(best["green_score"]),
-            ),
-            unsafe_allow_html=True,
-        )
+        confidence = recommendation_confidence(current, best, recommendations)
+        c1, c2, c3 = st.columns(3)
+        c1.metric("Confidence", f"{confidence['score']:.0f}%")
+        c2.metric("Experimental Risk", risk_level(best)["label"])
+        c3.metric("GreenScore Gain", f"{improvement:+.1f}")
         nav_buttons(1, 3)
         return
 
     if step == 3:
         st.subheader("Step 3: Before / After")
+        st.markdown(before_after_flow(current, best), unsafe_allow_html=True)
         st.markdown(before_after_insights(current, best), unsafe_allow_html=True)
-        st.dataframe(before_after_table(current, best), hide_index=True, use_container_width=True)
+        comparison_df = before_after_table(current, best)
+        st.dataframe(style_before_after_table(comparison_df), hide_index=True, use_container_width=True)
         with st.expander("What these metrics mean"):
             st.write("- GreenScore combines solvent sustainability and process performance into a 0-100 score.")
             st.write("- Toxicity is a hazard score, so lower is better.")
@@ -1627,7 +1740,7 @@ def analysis_page(solvents: pd.DataFrame, reactions: pd.DataFrame) -> None:
 
         with overview_tab:
             st.markdown("#### Ranked Greener Alternatives")
-            st.markdown(alternatives_cards(recommendations), unsafe_allow_html=True)
+            render_alternatives_cards(recommendations)
             st.markdown("#### Similar Historical Cases")
             st.markdown(expert_memory_summary(recommendations), unsafe_allow_html=True)
             with st.expander("Detailed ranking table"):
@@ -1652,15 +1765,17 @@ def analysis_page(solvents: pd.DataFrame, reactions: pd.DataFrame) -> None:
                 """,
                 unsafe_allow_html=True,
             )
+            st.markdown("#### Backend Evidence Bridge")
+            st.markdown(backend_bridge_card(result.get("bridge_evidence", {})), unsafe_allow_html=True)
 
             st.markdown("#### GreenScore Components")
             c1, c2 = st.columns(2)
             with c1:
                 st.caption("Current process")
-                st.markdown(contribution_bars(current["contributions"]), unsafe_allow_html=True)
+                render_contribution_bars(current["contributions"])
             with c2:
                 st.caption("Optimized process")
-                st.markdown(contribution_bars(best["contributions"]), unsafe_allow_html=True)
+                render_contribution_bars(best["contributions"])
             st.info(
                 "The ranking is deterministic. Llama receives these calculated values only after the scoring engine has selected the recommendation."
             )
@@ -1693,6 +1808,8 @@ def analysis_page(solvents: pd.DataFrame, reactions: pd.DataFrame) -> None:
                     """,
                     unsafe_allow_html=True,
                 )
+            st.markdown("#### First-Part Backend Evidence")
+            st.markdown(backend_bridge_card(result.get("bridge_evidence", {})), unsafe_allow_html=True)
             st.markdown("#### Expert Memory RAG")
             if result.get("expert_context"):
                 for source, chunk in zip(result["expert_sources"], result["expert_context"]):
@@ -1728,7 +1845,15 @@ def analysis_page(solvents: pd.DataFrame, reactions: pd.DataFrame) -> None:
                     st.success(f"Stored feedback: {decision}. Future rankings for similar processes will use this expert memory.")
 
             combined_sources = result["rag_sources"] + result.get("expert_sources", [])
-            report = build_pdf_report(current, best, recommendations, xai, result["explanation"], combined_sources)
+            report = build_pdf_report(
+                current,
+                best,
+                recommendations,
+                xai,
+                result["explanation"],
+                combined_sources,
+                result.get("bridge_evidence", {}),
+            )
             st.download_button(
                 "Download PDF report",
                 data=report,
@@ -1787,10 +1912,6 @@ def _score_color(score: float) -> str:
 def flashcards_page(solvents: pd.DataFrame) -> None:
     st.title("Solvent Flashcards")
     st.caption("Compare solvent hazard, sustainability, process fit, and substitution quality from the local GreenChem AI dataset.")
-    assistant_voice_player(
-        "Welcome to Solvent Flashcards. Use this page to compare solvents by toxicity, GreenScore, biodegradability, regulatory risk, boiling point, polarity, and GSK style score. Choose a focus solvent, filter by classification, or sort the library to inspect greener alternatives.",
-        "flashcards-page-guide",
-    )
 
     classifications = ["All"] + sorted(solvents["chem21_classification"].dropna().unique().tolist())
     c1, c2, c3 = st.columns([0.42, 0.29, 0.29])
@@ -1886,7 +2007,6 @@ def main() -> None:
             index=page_index,
         )
         st.session_state["current_page"] = page
-        st.toggle("Mute assistant voice", key="voice_muted", value=st.session_state.get("voice_muted", False))
         st.markdown("---")
         st.caption("Decision engine: RDKit features, Random Forest toxicity support, transparent GreenScore, ChromaDB RAG, local Ollama explanation.")
 

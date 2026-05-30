@@ -1,6 +1,8 @@
 # Scientific Note
 
-GreenChem AI is a local decision-support MVP for early green chemistry screening. It focuses on prevention by identifying potentially safer solvent substitutions before experimentation, and process optimization by estimating improved waste and performance metrics.
+GreenChem AI is an Explainable Green Chemistry Decision Support System for early green chemistry screening. It focuses on prevention by identifying potentially safer solvent substitutions before experimentation, and process optimization by estimating improved waste and performance metrics.
+
+GreenChem AI combines deterministic scientific scoring, solvent similarity analysis, scientific literature retrieval, expert-memory learning, and human validation to help chemists identify safer and more sustainable solvent alternatives before experimentation.
 
 ## Deterministic Metrics
 
@@ -26,6 +28,17 @@ The LLM is not part of the ranking function.
 ## Adaptive Expert Memory
 
 Human validation is stored in `data/feedback.csv` and retrieved in later predictions as expert memory. Accepted solvent recommendations receive a positive deterministic adjustment in similar future reaction contexts. Rejected recommendations and requests for alternatives receive negative adjustments. This lets the platform adapt to expert judgment without allowing the LLM to make scientific decisions.
+
+## First-Part Backend Bridge
+
+The project imports the first application layer as a supporting evidence bridge. The bridge does not replace the GreenScore engine. It adds extra explainability from an enriched solvent table:
+
+- Hansen solubility parameter distance between the current and recommended solvent
+- Density-based backend E-Factor estimate
+- Solvent family metadata
+- Simple structural alerts from SMILES patterns
+
+These values appear in the XAI workspace, scientific sources, Llama explanation context, and PDF report. They help a chemist inspect whether a substitution is chemically plausible before laboratory validation.
 
 ## Limitations
 

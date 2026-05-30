@@ -6,7 +6,11 @@ Many labs still select solvents from habit, availability, or legacy procedures. 
 
 ## Solution
 
-GreenChem AI is a local green chemistry co-pilot that screens solvent substitutions and process metrics before experimentation. It combines molecular features, local QSAR toxicity support, transparent GreenScore scoring, RAG context, and human validation.
+GreenChem AI is an Explainable Green Chemistry Decision Support System that screens solvent substitutions and process metrics before experimentation.
+
+Memorized sentence:
+
+GreenChem AI combines deterministic scientific scoring, solvent similarity analysis, scientific literature retrieval, expert-memory learning, and human validation to help chemists identify safer and more sustainable solvent alternatives before experimentation.
 
 ## Why It Is Not Just an LLM Wrapper
 
@@ -34,7 +38,7 @@ Output:
 
 ## Impact
 
-GreenChem AI helps teams prevent hazardous solvent choices, reduce process waste, and build a feedback loop between AI suggestions and chemist judgment.
+GreenChem AI helps teams prevent hazardous solvent choices, reduce process waste, and build a feedback loop between scientific scoring and chemist judgment.
 
 ## Next Steps
 

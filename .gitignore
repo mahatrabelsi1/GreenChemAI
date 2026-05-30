@@ -10,6 +10,7 @@ env/
 greenchem_ai/data/chroma_store/
 greenchem_ai/data/expert_memory_store/
 greenchem_ai/data/*.joblib
+first_part_app/
 
 .DS_Store
 Thumbs.db

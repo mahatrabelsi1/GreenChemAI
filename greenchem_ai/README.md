@@ -1,6 +1,8 @@
 # GreenChem AI
 
-AI-powered green solvent substitution and process optimization platform for a local AI x Green Chemistry hackathon MVP.
+Explainable Green Chemistry Decision Support System for safer solvent substitution and process optimization.
+
+GreenChem AI combines deterministic scientific scoring, solvent similarity analysis, scientific literature retrieval, expert-memory learning, and human validation to help chemists identify safer and more sustainable solvent alternatives before experimentation.
 
 The LLM does not decide, rank, calculate, or recommend. The recommendation is produced by deterministic scientific scoring and local ML support. Ollama only explains values that have already been calculated.
 
@@ -14,12 +16,12 @@ The LLM does not decide, rank, calculate, or recommend. The recommendation is pr
 - E-Factor and atom economy approximations
 - ChromaDB RAG with built-in green chemistry chunks
 - Expert-memory RAG from accepted/rejected human validation
+- First-part backend bridge for HSP similarity, density-based E-Factor evidence, and structural alerts
 - Ollama/Llama explanation with fallback if Ollama is offline
 - Human validation feedback stored locally in CSV
 - Downloadable PDF scientific report
 - Local solvent flashcards inspired by the AI4Green Solvent Guide
 - AI Process Assistant that routes a natural-language chemistry problem into the right workflow
-- Browser-local assistant voice for routed recommendations with a mute toggle
 
 ## Install
 
@@ -55,12 +57,6 @@ I am running an esterification in DMF. Yield is 65% and waste is 40 kg. I want a
 
 The assistant extracts the reaction, solvent, yield, and waste, recommends the Process Analysis workflow, and pre-fills the analysis form.
 
-## Assistant Voice
-
-The chemist enters text only. After the AI Process Assistant routes the problem, the app can read the recommended workflow aloud using the browser's built-in `speechSynthesis` API. Click **Listen to assistant** to start playback. It does not call a hosted Hugging Face endpoint or any external TTS API. Use the sidebar **Mute assistant voice** toggle to hide/silence narration.
-
-Future local-TTS upgrade path: download and run an open-source TTS model locally, then connect it through your own backend. Calling a hosted Hugging Face Endpoint would count as an external API and is not used in this MVP.
-
 ## How Scoring Works
 
 GreenScore is calculated from transparent weighted components:
@@ -83,12 +79,15 @@ The optimized process uses deterministic assumptions for yield and waste based o
 
 ## RAG and Feedback Workflow
 
-GreenChem AI uses two separate local retrieval paths:
+GreenChem AI uses local retrieval and evidence paths:
 
 - Scientific RAG retrieves solvent substitution, E-Factor, atom economy, CHEM21/GSK-style guidance, and green chemistry context for the Llama explanation.
 - Expert-memory RAG retrieves prior human validation from `data/feedback.csv` and makes it visible during later predictions.
+- Backend Evidence Bridge imports the first application layer through `data/solvents_backend.csv` and `core/science_backend_bridge.py`. It adds Hansen solubility parameter distance, density-based E-Factor estimates, solvent family, and simple structural alerts to the XAI panel and PDF report.
 
 Accepted recommendations add a positive deterministic ranking adjustment. Rejected or alternative-requested recommendations add a negative adjustment. This means expert decisions influence future rankings while the LLM still never decides the solvent.
+
+The bridge is supporting evidence only. It does not override the main deterministic ranking engine.
 
 ## Project Structure
 
@@ -99,6 +98,7 @@ greenchem_ai/
 ├── README.md
 ├── data/
 │   ├── solvents.csv
+│   ├── solvents_backend.csv
 │   ├── reactions.csv
 │   └── feedback.csv
 ├── core/
@@ -107,6 +107,7 @@ greenchem_ai/
 │   ├── scoring_engine.py
 │   ├── optimization_engine.py
 │   ├── toxicity_model.py
+│   ├── science_backend_bridge.py
 │   ├── xai_engine.py
 │   └── feedback_engine.py
 ├── ai/
