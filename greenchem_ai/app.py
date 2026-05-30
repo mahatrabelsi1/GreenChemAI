@@ -495,19 +495,47 @@ def assistant_voice_player(script: str, key: str) -> None:
     payload = json.dumps(script)
     components.html(
         f"""
-        <div style="font-family:Arial, sans-serif; color:#0F766E; font-size:12px; font-weight:800;">
-            Assistant voice starts automatically.
+        <div style="display:flex; gap:10px; align-items:center; font-family:Arial, sans-serif;">
+            <button id="play-{key}" style="
+                border:1px solid #0F766E;
+                background:#0F766E;
+                color:#F8FAFC;
+                border-radius:8px;
+                padding:10px 14px;
+                font-weight:800;
+                cursor:pointer;">
+                Listen to assistant
+            </button>
+            <button id="stop-{key}" style="
+                border:1px solid #CBD5E1;
+                background:#FFFFFF;
+                color:#0F172A;
+                border-radius:8px;
+                padding:10px 14px;
+                font-weight:800;
+                cursor:pointer;">
+                Stop
+            </button>
+            <span id="status-{key}" style="color:#475569; font-size:12px;">Click listen to hear the assistant.</span>
         </div>
         <script>
         const text = {payload};
-        const storageKey = "greenchem_voice_auto_{key}";
+        const playButton = document.getElementById("play-{key}");
+        const stopButton = document.getElementById("stop-{key}");
+        const status = document.getElementById("status-{key}");
         const speak = () => {{
-            if (!("speechSynthesis" in window)) return;
+            if (!("speechSynthesis" in window)) {{
+                status.textContent = "Voice is not supported in this browser.";
+                return;
+            }}
             window.speechSynthesis.cancel();
             const utterance = new SpeechSynthesisUtterance(text);
             utterance.rate = 2.0;
             utterance.pitch = 1.12;
             utterance.volume = 1.0;
+            utterance.onstart = () => status.textContent = "Speaking...";
+            utterance.onend = () => status.textContent = "Done.";
+            utterance.onerror = () => status.textContent = "Browser blocked voice. Try clicking again.";
             const pickVoice = () => {{
                 const voices = window.speechSynthesis.getVoices();
                 const femaleVoice =
@@ -523,17 +551,14 @@ def assistant_voice_player(script: str, key: str) -> None:
                 window.speechSynthesis.onvoiceschanged = pickVoice;
             }}
         }};
-        const runAutoVoice = () => {{
-            if (sessionStorage.getItem(storageKey) !== text) {{
-                sessionStorage.setItem(storageKey, text);
-                speak();
-            }}
-        }};
-        setTimeout(runAutoVoice, 250);
-        setTimeout(runAutoVoice, 900);
+        playButton.addEventListener("click", speak);
+        stopButton.addEventListener("click", () => {{
+            if ("speechSynthesis" in window) window.speechSynthesis.cancel();
+            status.textContent = "Stopped.";
+        }});
         </script>
         """,
-        height=24,
+        height=56,
     )
 
 
