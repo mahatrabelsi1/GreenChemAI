@@ -2,3 +2,5 @@ timestamp,reaction_type,current_solvent,recommended_solvent,decision,comment,wei
 2026-05-30T21:16:59,Esterification,DMF,Water,Request Alternative,,-2.0
 2026-05-30T23:13:21,Aldol Reaction,Acetone,Water,Accept,,3.0
 2026-05-31T04:27:48,Aldol Reaction,DMF,Water,Reject,,-5.0
+2026-05-31T08:03:47,Aldol Reaction,Acetone,Water,Request Alternative,i dont aggreee,-2.0
+2026-05-31T08:03:51,Aldol Reaction,Acetone,Water,Reject,i dont aggreee,-5.0

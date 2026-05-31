@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 from datetime import datetime
 from io import BytesIO
+import math
 from pathlib import Path
 import re
 
@@ -1918,8 +1919,8 @@ def analysis_page(solvents: pd.DataFrame, reactions: pd.DataFrame) -> None:
     if step == 5:
         st.subheader("Step 5: Advanced Analysis")
         st.caption("Expert review workspace: compare alternatives, inspect score drivers, review retrieved sources, and validate the recommendation.")
-        overview_tab, xai_tab, sources_tab, validation_tab = st.tabs(
-            ["Overview", "XAI", "Scientific Sources", "Validation"]
+        overview_tab, sources_tab, validation_tab = st.tabs(
+            ["Overview", "Scientific Sources", "Validation"]
         )
 
         with overview_tab:
@@ -1929,67 +1930,6 @@ def analysis_page(solvents: pd.DataFrame, reactions: pd.DataFrame) -> None:
             st.markdown(expert_memory_summary(recommendations), unsafe_allow_html=True)
             with st.expander("Detailed ranking table"):
                 st.dataframe(recommendations_table(recommendations), hide_index=True, use_container_width=True)
-
-        with xai_tab:
-            st.markdown("#### Decision Factors")
-            f1, f2, f3, f4 = st.columns(4)
-            f1.markdown('<div class="gc-factor"><span class="gc-check">OK</span><br>Compatibility</div>', unsafe_allow_html=True)
-            f2.markdown('<div class="gc-factor"><span class="gc-check">OK</span><br>Toxicity Reduction</div>', unsafe_allow_html=True)
-            f3.markdown('<div class="gc-factor"><span class="gc-check">OK</span><br>GreenScore Gain</div>', unsafe_allow_html=True)
-            f4.markdown('<div class="gc-factor"><span class="gc-check">OK</span><br>Waste Reduction</div>', unsafe_allow_html=True)
-            st.markdown(
-                f"""
-                <div class="gc-source-card" style="background:#F0FDFA; border-color:#99F6E4;">
-                    <p style="color:#0F766E; font-size:12px; font-weight:900; text-transform:uppercase; margin:0 0 6px 0;">Rank score formula</p>
-                    <p style="color:#0F172A; margin:0;"><b>Rank Score = 0.5 x Candidate GreenScore + 0.5 x Improvement Score + Expert Memory Adjustment</b></p>
-                    <p style="color:#475569; margin:8px 0 0 0;">Improvement Score = 0.5 x Toxicity Improvement + 0.5 x normalized E-Factor Improvement.</p>
-                    <p style="color:#475569; margin:8px 0 0 0;">For {best['solvent']}: improvement score {best.get('improvement_score', 0):.1f}, toxicity improvement {best.get('toxicity_improvement_score', 0):.1f}, E-Factor improvement {best.get('efactor_improvement_score', 0):.1f}.</p>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-            st.markdown(confidence_panel(current, best, recommendations), unsafe_allow_html=True)
-            risk = risk_level(best)
-            st.markdown(
-                f"""
-                <div class="gc-source-card">
-                    <p style="color:#64748B; font-size:12px; font-weight:900; text-transform:uppercase; margin:0 0 6px 0;">Experimental risk</p>
-                    <span class="gc-risk-badge" style="background:{risk['color']};">{risk['label']}</span>
-                    <p style="color:#475569; margin:8px 0 0 0;">{risk['summary']}</p>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
-            st.markdown("#### Backend Evidence Bridge")
-            st.markdown(backend_bridge_card(result.get("bridge_evidence", {})), unsafe_allow_html=True)
-
-            st.markdown("#### GreenScore Components")
-            c1, c2 = st.columns(2)
-            with c1:
-                st.caption("Current process")
-                render_contribution_bars(current["contributions"])
-            with c2:
-                st.caption("Optimized process")
-                render_contribution_bars(best["contributions"])
-            st.info(
-                "The ranking is deterministic. Llama receives these calculated values only after the scoring engine has selected the recommendation."
-            )
-
-            with st.expander("Technical details"):
-                for item in xai["decision_trace"]:
-                    st.write(f"- {item}")
-                st.markdown("##### Score Contributions")
-                c1, c2 = st.columns(2)
-                with c1:
-                    st.caption("Current process")
-                    st.dataframe(contributions_table(current["contributions"]), hide_index=True, use_container_width=True)
-                with c2:
-                    st.caption("Optimized process")
-                    st.dataframe(contributions_table(best["contributions"]), hide_index=True, use_container_width=True)
-
-            with st.expander("About model limitations"):
-                for item in xai["limitations"]:
-                    st.write(f"- {item}")
 
         with sources_tab:
             st.markdown("#### Scientific RAG Context")
@@ -2104,6 +2044,152 @@ def _score_color(score: float) -> str:
     return "#22C55E"
 
 
+@st.cache_data
+def molecule_png(smiles: str, width: int = 260, height: int = 160) -> bytes | None:
+    try:
+        from rdkit import Chem
+        from rdkit.Chem import Draw
+
+        mol = Chem.MolFromSmiles(smiles)
+        if mol is None:
+            return None
+        image = Draw.MolToImage(mol, size=(width, height))
+        buffer = BytesIO()
+        image.save(buffer, format="PNG")
+        return buffer.getvalue()
+    except Exception:
+        return fallback_molecule_png(smiles, width, height)
+
+
+def fallback_molecule_png(smiles: str, width: int = 260, height: int = 160) -> bytes | None:
+    """Small dependency-light SMILES sketcher used when RDKit is unavailable.
+
+    This is not a chemistry-grade layout engine. It gives the flashcards a
+    readable atom-bond graph for common solvent SMILES while RDKit remains the
+    preferred renderer when installed.
+    """
+    try:
+        from PIL import Image, ImageDraw, ImageFont
+    except Exception:
+        return None
+
+    atoms: list[str] = []
+    bonds: list[tuple[int, int, str]] = []
+    branch_stack: list[int | None] = []
+    ring_open: dict[str, int] = {}
+    current: int | None = None
+    pending_bond = "-"
+    i = 0
+    while i < len(smiles):
+        ch = smiles[i]
+        if ch in "-=#":
+            pending_bond = ch
+            i += 1
+            continue
+        if ch == "(":
+            branch_stack.append(current)
+            i += 1
+            continue
+        if ch == ")":
+            current = branch_stack.pop() if branch_stack else current
+            i += 1
+            continue
+        if ch.isdigit():
+            if current is not None:
+                if ch in ring_open:
+                    bonds.append((ring_open.pop(ch), current, pending_bond))
+                else:
+                    ring_open[ch] = current
+            pending_bond = "-"
+            i += 1
+            continue
+        if ch == "[":
+            end = smiles.find("]", i)
+            token = smiles[i + 1 : end] if end != -1 else ch
+            atom = re.match(r"[A-Z][a-z]?|[cnosp]", token)
+            label = atom.group(0).upper() if atom else token[:2]
+            i = end + 1 if end != -1 else i + 1
+        elif i + 1 < len(smiles) and smiles[i : i + 2] in {"Cl", "Br"}:
+            label = smiles[i : i + 2]
+            i += 2
+        elif ch.isalpha():
+            label = ch.upper()
+            i += 1
+        else:
+            i += 1
+            continue
+
+        atoms.append(label)
+        new_idx = len(atoms) - 1
+        if current is not None:
+            bonds.append((current, new_idx, pending_bond))
+        current = new_idx
+        pending_bond = "-"
+
+    if not atoms:
+        return None
+
+    center_x = width / 2
+    center_y = height / 2
+    radius_x = max(46, min(width * 0.36, 24 * max(1, len(atoms) - 1)))
+    radius_y = max(34, height * 0.28)
+    if len(atoms) == 1:
+        positions = [(center_x, center_y)]
+    elif len(atoms) <= 5:
+        start_x = center_x - min(width * 0.35, 42 * (len(atoms) - 1)) / 2
+        positions = [
+            (start_x + idx * min(42, width * 0.7 / max(1, len(atoms) - 1)), center_y + (idx % 2) * 24 - 12)
+            for idx in range(len(atoms))
+        ]
+    else:
+        positions = [
+            (
+                center_x + radius_x * math.cos((2 * math.pi * idx / len(atoms)) - math.pi / 2),
+                center_y + radius_y * math.sin((2 * math.pi * idx / len(atoms)) - math.pi / 2),
+            )
+            for idx in range(len(atoms))
+        ]
+
+    image = Image.new("RGB", (width, height), "#F8FAFC")
+    draw = ImageDraw.Draw(image)
+    try:
+        font = ImageFont.truetype("arial.ttf", 15)
+    except Exception:
+        font = ImageFont.load_default()
+
+    for a, b, bond in bonds:
+        if a >= len(positions) or b >= len(positions):
+            continue
+        x1, y1 = positions[a]
+        x2, y2 = positions[b]
+        draw.line((x1, y1, x2, y2), fill="#0F766E", width=3)
+        if bond in {"=", "#"}:
+            offset = 5
+            draw.line((x1, y1 + offset, x2, y2 + offset), fill="#14B8A6", width=2)
+        if bond == "#":
+            draw.line((x1, y1 - 5, x2, y2 - 5), fill="#14B8A6", width=2)
+
+    atom_colors = {"O": "#EF4444", "N": "#2563EB", "S": "#CA8A04", "CL": "#16A34A", "BR": "#92400E", "F": "#16A34A"}
+    for idx, label in enumerate(atoms):
+        x, y = positions[idx]
+        color = atom_colors.get(label.upper(), "#0F172A")
+        draw.ellipse((x - 17, y - 17, x + 17, y + 17), fill="#FFFFFF", outline="#99F6E4", width=2)
+        bbox = draw.textbbox((0, 0), label, font=font)
+        draw.text((x - (bbox[2] - bbox[0]) / 2, y - (bbox[3] - bbox[1]) / 2 - 1), label, fill=color, font=font)
+
+    buffer = BytesIO()
+    image.save(buffer, format="PNG")
+    return buffer.getvalue()
+
+
+def render_molecule_image(smiles: str, caption: str = "2D molecular structure") -> None:
+    image = molecule_png(smiles)
+    if image:
+        st.image(image, use_container_width=True)
+    else:
+        st.info("2D molecule unavailable")
+
+
 def flashcards_page(solvents: pd.DataFrame) -> None:
     branded_header(
         "Solvent Flashcards",
@@ -2146,6 +2232,13 @@ def flashcards_page(solvents: pd.DataFrame) -> None:
         """,
         unsafe_allow_html=True,
     )
+    focus_left, focus_right = st.columns([0.28, 0.72])
+    with focus_left:
+        render_molecule_image(str(focus["smiles"]), f"{focus['name']} structure")
+    with focus_right:
+        st.caption("Molecular safety inspection support")
+        st.write(f"**SMILES:** `{focus['smiles']}`")
+        st.write("The 2D structure is rendered locally from SMILES with RDKit when available.")
 
     view = solvents.copy()
     if classification != "All":
@@ -2167,32 +2260,24 @@ def flashcards_page(solvents: pd.DataFrame) -> None:
         toxicity_color = _score_color(100 - float(row["toxicity_score"]))
         reg_color = _score_color(100 - float(row["regulatory_risk"]))
         with cols[idx % 3]:
-            st.markdown(
-                f"""
-                <div style="background:#FFFFFF; border:1px solid #CBD5E1; border-radius:8px; padding:14px; min-height:330px; box-shadow:0 8px 24px rgba(15, 23, 42, 0.06); margin-bottom:12px;">
-                    <div style="display:flex; justify-content:space-between; gap:8px; align-items:flex-start;">
-                        <h3 style="margin:0 0 8px 0; color:#0F172A;">{row['name']}</h3>
-                        <span style="background:{class_color}; color:#0F172A; border-radius:999px; padding:4px 9px; font-size:12px; font-weight:700;">{row['chem21_classification']}</span>
-                    </div>
-                    <p style="color:#475569; margin:0 0 12px 0;"><strong>SMILES:</strong> {row['smiles']}</p>
-                    <p style="color:#64748B; margin:0 0 4px 0; font-size:12px; font-weight:700;">Green score</p>
-                    <div style="height:8px; background:#E2E8F0; border-radius:999px; overflow:hidden; margin-bottom:10px;">
-                        <div style="width:{row['green_score']}%; height:8px; background:{score_color};"></div>
-                    </div>
-                    <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
-                        <div style="background:#F8FAFC; border-radius:8px; padding:8px;"><span style="color:#64748B; font-size:12px;">Green</span><br><strong style="color:{score_color};">{row['green_score']}</strong></div>
-                        <div style="background:#F8FAFC; border-radius:8px; padding:8px;"><span style="color:#64748B; font-size:12px;">Toxicity</span><br><strong style="color:{toxicity_color};">{row['toxicity_score']}</strong></div>
-                        <div style="background:#F8FAFC; border-radius:8px; padding:8px;"><span style="color:#64748B; font-size:12px;">Biodeg.</span><br><strong style="color:#0F766E;">{row['biodegradability_score']}</strong></div>
-                        <div style="background:#F8FAFC; border-radius:8px; padding:8px;"><span style="color:#64748B; font-size:12px;">Reg. risk</span><br><strong style="color:{reg_color};">{row['regulatory_risk']}</strong></div>
-                    </div>
-                    <div style="border-top:1px solid #E2E8F0; margin-top:12px; padding-top:10px;">
-                        <p style="color:#475569; margin:0 0 4px 0;"><strong>BP:</strong> {row['boiling_point']} C | <strong>Polarity:</strong> {row['polarity_index']}</p>
-                        <p style="color:#475569; margin:0;"><strong>GSK-style score:</strong> {row['gsk_score']} | <strong>VOC:</strong> {row['voc_score']}</p>
-                    </div>
-                </div>
-                """,
-                unsafe_allow_html=True,
-            )
+            with st.container(border=True):
+                title_cols = st.columns([0.62, 0.38])
+                title_cols[0].markdown(f"### {row['name']}")
+                title_cols[1].markdown(
+                    f"<span style='background:{class_color}; color:#0F172A; border-radius:999px; padding:4px 9px; font-size:12px; font-weight:700;'>{row['chem21_classification']}</span>",
+                    unsafe_allow_html=True,
+                )
+                render_molecule_image(str(row["smiles"]), f"{row['name']} structure")
+                st.markdown(f"**SMILES:** `{row['smiles']}`")
+                st.caption("Green score")
+                st.progress(min(max(float(row["green_score"]) / 100.0, 0.0), 1.0))
+                m1, m2 = st.columns(2)
+                m1.markdown(f"**Green**  \n<span style='color:{score_color}; font-weight:800;'>{row['green_score']}</span>", unsafe_allow_html=True)
+                m2.markdown(f"**Toxicity**  \n<span style='color:{toxicity_color}; font-weight:800;'>{row['toxicity_score']}</span>", unsafe_allow_html=True)
+                m3, m4 = st.columns(2)
+                m3.markdown(f"**Biodeg.**  \n<span style='color:#0F766E; font-weight:800;'>{row['biodegradability_score']}</span>", unsafe_allow_html=True)
+                m4.markdown(f"**Reg. risk**  \n<span style='color:{reg_color}; font-weight:800;'>{row['regulatory_risk']}</span>", unsafe_allow_html=True)
+                st.caption(f"BP: {row['boiling_point']} C | Polarity: {row['polarity_index']} | GSK-style score: {row['gsk_score']} | VOC: {row['voc_score']}")
 
 
 def main() -> None:
