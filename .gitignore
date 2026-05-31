@@ -10,6 +10,9 @@ env/
 greenchem_ai/data/chroma_store/
 greenchem_ai/data/expert_memory_store/
 greenchem_ai/data/*.joblib
+greenchem_ai/models/piper/*.onnx
+greenchem_ai/models/piper/*.onnx.json
+greenchem_ai/assets/generated_audio/
 first_part_app/
 
 .DS_Store

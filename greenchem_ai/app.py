@@ -8,8 +8,10 @@ import re
 
 import pandas as pd
 import streamlit as st
+import streamlit.components.v1 as components
 
 from ai.llama_explainer import explain_with_ollama
+from ai.local_tts import audio_data_uri, piper_status, synthesize_with_piper
 from ai.rag_engine import retrieve_expert_memory_context, retrieve_scientific_context
 from core.feedback_engine import load_feedback, store_feedback
 from core.optimization_engine import analyze_current_process, recommend_solvents
@@ -583,6 +585,63 @@ def branded_header(title: str | None = None, caption: str | None = None) -> None
         st.caption(caption)
 
 
+def autoplay_tts(text: str, key: str) -> Path | None:
+    audio_path = synthesize_with_piper(text, voice_key=key)
+    if audio_path is None:
+        return None
+    src = audio_data_uri(audio_path)
+    components.html(
+        f"""
+        <audio id="gc-tts-{key}" autoplay preload="auto" playsinline style="display:none;">
+            <source src="{src}" type="audio/wav">
+        </audio>
+        <script>
+            function playGreenChemWelcome() {{
+                const audio = document.getElementById("gc-tts-{key}");
+                if (audio) {{
+                    audio.volume = 0.9;
+                    audio.playbackRate = 1.5;
+                    audio.muted = false;
+                    const playPromise = audio.play();
+                    if (playPromise !== undefined) {{
+                        playPromise.catch(() => {{}});
+                    }}
+                }}
+            }}
+            window.addEventListener("load", () => setTimeout(playGreenChemWelcome, 350));
+            document.addEventListener("DOMContentLoaded", () => setTimeout(playGreenChemWelcome, 350));
+            setTimeout(playGreenChemWelcome, 900);
+        </script>
+        """,
+        height=0,
+    )
+    return audio_path
+
+
+def local_voice_panel(text: str, key: str) -> None:
+    status = piper_status()
+    if not status["available"]:
+        st.warning(
+            "Local voice is not ready yet. GreenChem AI needs the Piper executable plus the Amy voice model files on this machine."
+        )
+        with st.expander("Set up local Piper voice"):
+            st.caption("This uses local Piper TTS. No hosted text-to-speech API is called.")
+            st.write("Missing: " + ", ".join(status["missing"]))
+            st.code(
+                "pip install -r requirements-tts.txt\n"
+                "mkdir models\\piper\n"
+                "curl -L -o models\\piper\\en_US-amy-medium.onnx https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/amy/medium/en_US-amy-medium.onnx\n"
+                "curl -L -o models\\piper\\en_US-amy-medium.onnx.json https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/amy/medium/en_US-amy-medium.onnx.json",
+                language="powershell",
+            )
+        return
+
+    audio_path = autoplay_tts(text, key)
+    if audio_path is None:
+        st.warning("Piper is installed, but audio generation failed. Check that the model and config files match.")
+        return
+
+
 def metric_row(current: dict, best: dict | None = None) -> None:
     cols = st.columns(4)
     cols[0].metric("GreenScore", f"{current['green_score']:.1f}", None if not best else f"{best['green_score'] - current['green_score']:.1f}")
@@ -625,13 +684,7 @@ def hero_card(label: str, value: str, subtext: str, color: str = "#0F172A") -> s
 
 
 def pipeline_diagram() -> str:
-    return """
-    <div class="gc-method-card">
-        <b>Method:</b> the app filters compatible solvents, calculates deterministic GreenScore metrics,
-        retrieves scientific and expert-memory context, then asks the chemist to validate the recommendation.
-        Llama explains the result only after scoring is complete.
-    </div>
-    """
+    return ""
 
 
 def process_flow(current: dict, best: dict) -> str:
@@ -1074,6 +1127,9 @@ def is_chemistry_domain_question(text: str, solvents: pd.DataFrame, reactions: p
         "conversion",
         "workup",
         "process",
+        "analysis",
+        "analyze",
+        "analyse",
         "optimization",
         "optimisation",
         "biodegradable",
@@ -1149,7 +1205,7 @@ def route_chemist_problem(problem: str, solvents: pd.DataFrame, reactions: pd.Da
         reasons.append("Solvent hazard or substitution problem detected.")
         feature = "Process Analysis"
         confidence += 0.2
-    if any(word in text for word in ["yield", "waste", "e-factor", "efactor", "optimize", "optimise", "process"]):
+    if any(word in text for word in ["yield", "waste", "e-factor", "efactor", "optimize", "optimise", "process", "analysis", "analyze", "analyse"]):
         reasons.append("Process optimization metrics detected.")
         feature = "Process Analysis"
         confidence += 0.15
@@ -1197,6 +1253,12 @@ def assistant_page(solvents: pd.DataFrame, reactions: pd.DataFrame) -> None:
         "AI Process Assistant",
         "Describe the chemistry problem in plain language. The assistant routes you to the right GreenChem AI workflow.",
     )
+    welcome_text = (
+        "Hello, welcome to GreenChem AI. "
+        "How can I help you today? "
+        "Please enter your chemistry request, solvent problem, or process optimization goal."
+    )
+    local_voice_panel(welcome_text, "assistant_welcome")
 
     st.markdown(
         """
@@ -1712,7 +1774,12 @@ def analysis_page(solvents: pd.DataFrame, reactions: pd.DataFrame) -> None:
 
     if step == 1:
         st.subheader("Process Input")
-        st.markdown(pipeline_diagram(), unsafe_allow_html=True)
+        analysis_voice_text = (
+            "Good. Now you are in the analysis page. "
+            "Please enter the reaction type, the current solvent, the yield percentage, "
+            "the waste produced in kilograms, and any useful reaction notes such as catalyst, temperature, workup concerns, or solvent constraints."
+        )
+        local_voice_panel(analysis_voice_text, "analysis_input")
         prefill = st.session_state.get("assistant_prefill", {})
         reaction_options = reaction_types(reactions)
         solvent_options = solvent_names(solvents)
@@ -1730,8 +1797,6 @@ def analysis_page(solvents: pd.DataFrame, reactions: pd.DataFrame) -> None:
             notes = st.text_area("Optional reaction notes", value=prefill.get("notes", ""), placeholder="Catalyst, temperature, workup concerns, solvent constraints...")
             model_name = st.text_input("Local Ollama model", value="llama3")
             submitted = st.form_submit_button("Analyze Process", type="primary")
-
-        st.info("Demo input: Esterification, DMF, 65% yield, 40 kg waste.")
 
         if submitted:
             reaction = get_reaction(reaction_type, reactions)
@@ -2044,6 +2109,11 @@ def flashcards_page(solvents: pd.DataFrame) -> None:
         "Solvent Flashcards",
         "Compare solvent hazard, sustainability, process fit, and substitution quality from the local GreenChem AI dataset.",
     )
+    flashcards_voice_text = (
+        "Good. On this page we will review each solvent's information one by one. "
+        "You can use the filters to focus the solvent library and optimize what you want to compare."
+    )
+    local_voice_panel(flashcards_voice_text, "solvent_flashcards")
 
     classifications = ["All"] + sorted(solvents["chem21_classification"].dropna().unique().tolist())
     c1, c2, c3 = st.columns([0.42, 0.29, 0.29])

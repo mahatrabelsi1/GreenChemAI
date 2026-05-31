@@ -28,6 +28,7 @@ Top 5 solvent recommendations
   +--> rag_engine.py retrieves expert feedback memory from local validation history
   +--> science_backend_bridge.py contributes supporting evidence to XAI and reports
   +--> llama_explainer.py asks local Ollama for explanation only
+  +--> local_tts.py optionally synthesizes local Piper voice guidance
   |
   v
 Human validation
@@ -70,3 +71,12 @@ The first application layer is integrated as supporting scientific evidence, not
 - Simple structural alerts
 
 This bridge feeds the XAI panel, Scientific Sources panel, Llama context, and PDF report. It does not choose or override the recommended solvent.
+
+## Local Voice Layer
+
+The AI Assistant page can play a short welcome message using Piper TTS. This is local inference only:
+
+- `ai/local_tts.py` calls the local `piper` executable.
+- `models/piper/en_US-amy-medium.onnx` and `.onnx.json` hold the downloaded voice files.
+- `assets/generated_audio/` stores generated WAV files.
+- No external text-to-speech API is called.

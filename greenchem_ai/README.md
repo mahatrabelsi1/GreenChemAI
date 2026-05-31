@@ -44,6 +44,17 @@ ollama serve
 
 You can also use `llama3.1` or `llama3.2` by changing the model name in the app.
 
+Optional local voice assistant:
+
+```powershell
+pip install -r requirements-tts.txt
+mkdir models\piper
+curl -L -o models\piper\en_US-amy-medium.onnx https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/amy/medium/en_US-amy-medium.onnx
+curl -L -o models\piper\en_US-amy-medium.onnx.json https://huggingface.co/rhasspy/piper-voices/resolve/main/en/en_US/amy/medium/en_US-amy-medium.onnx.json
+```
+
+The voice layer uses Piper locally. The model files are stored under `models/piper/`, generated WAV files stay under `assets/generated_audio/`, and no hosted text-to-speech API is called. The default voice is the `en_US/amy/medium` Piper voice from the `rhasspy/piper-voices` model repository.
+
 ## Demo Input
 
 - Reaction type: Esterification
@@ -112,6 +123,7 @@ The bridge is supporting evidence only. It does not override the main determinis
 greenchem_ai/
 ├── app.py
 ├── requirements.txt
+├── requirements-tts.txt
 ├── README.md
 ├── data/
 │   ├── solvents.csv
@@ -134,6 +146,8 @@ greenchem_ai/
 ├── assets/
 │   ├── logo.svg
 │   └── architecture.md
+├── models/
+│   └── piper/
 └── docs/
     ├── scientific_note.md
     ├── pitch_outline.md
